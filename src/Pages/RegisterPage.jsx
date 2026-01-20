@@ -9,7 +9,7 @@ import { BACKEND_URL } from "../constants";
 import { US_STATES } from "../components/ui/us-states";
 import { useToast } from "../hooks/use-toast";
 import TermsDialog from "../components/TermsDialog";
-
+import { Loader2 } from "lucide-react";
 // Helper to safely decode a JWT without validating it (backend must still verify)
 const decodeIdToken = (token) => {
   try {
@@ -67,9 +67,11 @@ const initialErrors = {
 
 const RegisterPage = () => {
   const { toast } = useToast();
-  const [isLoading, setIsLoading] = useState(false);
+  // Start with loader visible until CIAM verification / initial checks complete
+  const [isLoading, setIsLoading] = useState(true);
   const [agreeToTerms, setAgreeToTerms] = useState(false);
-  const [signupType, setSignupType] = useState("standalone"); // "standalone" or "clinic"
+  // eslint-disable-next-line no-unused-vars
+  const [signupType, setSignupType] = useState("standalone"); // "standalone" or "clinic" - setSignupType will be used when registration type selection is re-enabled
   const [isNpiVerified, setIsNpiVerified] = useState(false);
   const [isVerifyingNpi, setIsVerifyingNpi] = useState(false);
   const [isStatesDropdownOpen, setIsStatesDropdownOpen] = useState(false);
@@ -109,6 +111,7 @@ const RegisterPage = () => {
           description: errorMsg,
           variant: "destructive",
         });
+        setIsLoading(false);
         return;
       }
 
@@ -140,9 +143,15 @@ const RegisterPage = () => {
             userId,
           }),
         })
-          .then((res) => {
+          .then(async (res) => {
             if (!res.ok) {
-              throw new Error(`Verification failed: ${res.status}`);
+              // Try to read error details from API (e.g. expired token)
+              const errorData = await res.json().catch(() => ({}));
+              const backendMessage =
+                errorData.error ||
+                errorData.message ||
+                `Verification failed: ${res.status}`;
+              throw new Error(backendMessage);
             }
             return res.json();
           })
@@ -154,8 +163,8 @@ const RegisterPage = () => {
             
             // Check profileComplete status to determine redirect
             if (data.profileComplete === true) {
-              // Profile is complete - redirect to dashboard
-              // Remove hash from URL before navigating
+              // Profile is complete - show loader and redirect to dashboard
+              setIsLoading(true);
               if (window.history && window.history.replaceState) {
                 window.history.replaceState(
                   null,
@@ -169,11 +178,38 @@ const RegisterPage = () => {
               // Keep user on registration page to complete profile
               // Keep hash in URL for page refresh support
               // Hash will be removed after successful registration
+              setIsLoading(false);
             }
           })
           .catch((err) => {
             console.error("Token verification failed:", err);
-            const errorMsg = "Token verification failed. Please try logging in again.";
+
+            // If backend reports invalid/expired ID token, redirect to login with a toast
+            if (
+              err.message?.includes("Invalid or expired ID token") ||
+              err.message?.includes("ID token has expired")
+            ) {
+              // Keep full-screen loader visible during redirect
+              setIsLoading(true);
+
+              const errorMsg = "Your session has expired. Please log in again.";
+              toast({
+                title: "Session Expired",
+                description: errorMsg,
+                variant: "destructive",
+              });
+
+              // Clear any stale CIAM / backend tokens
+              sessionStorage.removeItem("ciamIdToken");
+              sessionStorage.removeItem("backendToken");
+
+              // Navigate back to login page (AuthPage)
+              navigate("/");
+              return;
+            }
+
+            const errorMsg =
+              err.message || "Token verification failed. Please try logging in again.";
             setErrors((prev) => ({
               ...prev,
               general: errorMsg,
@@ -183,11 +219,14 @@ const RegisterPage = () => {
               description: errorMsg,
               variant: "destructive",
             });
+            setIsLoading(false);
           });
+      } else {
+        // Token came from sessionStorage (page refresh) - show the form
+        setIsLoading(false);
       }
     } else if (error) {
       // CIAM reported an error instead of returning a token
-      console.error("CIAM login error:", error, errorDescription);
       const errorMsg = errorDescription || error || "Login failed. Please try again.";
       setErrors((prev) => ({
         ...prev,
@@ -198,6 +237,9 @@ const RegisterPage = () => {
         description: errorMsg,
         variant: "destructive",
       });
+      setIsLoading(false);
+    } else {
+      setIsLoading(false);
     }
   }, [toast]);
 
@@ -269,13 +311,19 @@ const RegisterPage = () => {
     setErrors(prev => ({ ...prev, [name]: "" }));
   };
 
+  // Handle name input (letters, spaces, hyphens, apostrophes only - no numbers)
+  const handleNameChange = (e) => {
+    const { name, value } = e.target;
+    const nameValue = value.replace(/[^a-zA-Z\s\-']/g, '');
+    setFormData(prev => ({ ...prev, [name]: nameValue }));
+    setErrors(prev => ({ ...prev, [name]: "" }));
+  };
+
   // Handle numeric input for NPI and License Number (only allow numbers)
   const handleNumericChange = (e) => {
     const { name, value } = e.target;
-    // Only allow numbers
     const numericValue = value.replace(/\D/g, '');
     
-    // If NPI number changes, reset verification status
     if (name === "npiNumber" && numericValue !== formData.npiNumber) {
       setIsNpiVerified(false);
     }
@@ -304,14 +352,12 @@ const RegisterPage = () => {
   };
 
   const handleNPIBlur = async () => {
-    // Validate format first
     if (formData.npiNumber && !validateNPI(formData.npiNumber)) {
       setErrors(prev => ({ ...prev, npiNumber: "NPI must be exactly 10 digits" }));
       setIsNpiVerified(false);
       return;
     }
 
-    // If NPI is valid and not yet verified, call verify API
     if (formData.npiNumber && validateNPI(formData.npiNumber) && !isNpiVerified) {
       setIsVerifyingNpi(true);
       setErrors(prev => ({ ...prev, npiNumber: "" }));
@@ -338,9 +384,7 @@ const RegisterPage = () => {
         } else {
           const data = await response.json();
           
-          // Check if NPI is valid based on the API response
           if (data.valid === true) {
-            // NPI verified successfully
             setIsNpiVerified(true);
             setErrors(prev => ({ ...prev, npiNumber: "" }));
             toast({
@@ -579,7 +623,6 @@ const RegisterPage = () => {
     setIsLoading(true);
     
     try {
-      // Get backend token from session storage (received from verify endpoint)
       const backendToken = sessionStorage.getItem("backendToken");
       
       if (!backendToken) {
@@ -597,7 +640,6 @@ const RegisterPage = () => {
         return;
       }
 
-      // Prepare practice address - only include if it has at least one field
       let practiceAddressData = null;
       if (signupType === "clinic" || 
           formData.practiceAddress.street || 
@@ -607,7 +649,6 @@ const RegisterPage = () => {
         practiceAddressData = formData.practiceAddress;
       }
 
-      // Prepare request payload
       const payload = {
         firstName: formData.firstName,
         middleName: formData.middleName || undefined,
@@ -628,7 +669,6 @@ const RegisterPage = () => {
         signupType: signupType,
       };
 
-      // Remove undefined fields
       Object.keys(payload).forEach(key => {
         if (payload[key] === undefined) {
           delete payload[key];
@@ -678,7 +718,6 @@ const RegisterPage = () => {
       }, 1500);
       
     } catch (error) {
-      console.error("Registration error:", error);
       const errorMsg = error.message || "Registration failed. Please try again or contact support if the issue persists.";
       setErrors((prev) => ({
         ...prev,
@@ -696,20 +735,21 @@ const RegisterPage = () => {
 
   return (
     <div className="relative min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-blue-50 px-4 py-4 overflow-hidden">
-
-      {/* --- Light Overlay Gradient --- */}
       <div className="absolute inset-0 bg-gradient-to-b from-white/60 via-white/80 to-blue-50/90 backdrop-blur-sm"></div>
+      {isLoading && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-white">
+          <Loader2 className="h-12 w-12 animate-spin text-blue-500" />
+        </div>
+      )}
 
-      {/* --- Sign Up Card --- */}
+      {!isLoading && (
       <div className="relative max-w-5xl w-full bg-white/95 px-8 py-6 rounded-2xl shadow-lg backdrop-blur-md flex flex-col items-center animate-fadeIn z-10">
-        {/* Logo */}
         <div className="flex justify-center mb-3">
           <div className="w-14 h-14 flex items-center justify-center">
             <Logo size="large" />
           </div>
         </div>
 
-        {/* Title */}
         <h2 className="text-2xl font-extrabold text-[#1E3A8A] mb-1 text-center">
           Register your SEISMIC account
         </h2>
@@ -717,10 +757,9 @@ const RegisterPage = () => {
           Join our healthcare platform
         </p>
 
-        {/* Registration Type Selection - Pill Shaped (Same as Login Page) */}
+        {/*
         <div className="flex justify-center mb-4">
           <div className="flex gap-2 bg-gray-100 p-1 rounded-full">
-            {/* Standalone Radio */}
             <label className="cursor-pointer flex-1 min-w-[180px]">
               <input
                 type="radio"
@@ -750,7 +789,6 @@ const RegisterPage = () => {
               </div>
             </label>
 
-            {/* Clinic Radio */}
             <label className="cursor-pointer flex-1 min-w-[180px]">
               <input
                 type="radio"
@@ -781,16 +819,11 @@ const RegisterPage = () => {
             </label>
           </div>
         </div>
-
-        {/* Registration Form */}
+        */}
         <form onSubmit={handleSubmit} className="w-full space-y-3" autoComplete="off">
-          {/* Personal Information Section */}
           <div className="">
             <h3 className="text-lg font-medium text-[#1E40AF] mb-1">Personal Information</h3>
-            
-            {/* Row 1: First Name, Middle Name, Last Name */}
             <div className="grid grid-cols-3 gap-3 mb-3">
-            {/* First Name */}
             <div>
               <Label htmlFor="firstName" className="block text-sm font-medium text-gray-700 mb-1">
                 First Name<span className="text-red-500">*</span>
@@ -800,7 +833,7 @@ const RegisterPage = () => {
                 type="text"
                 name="firstName"
                 value={formData.firstName}
-                onChange={handleChange}
+                onChange={handleNameChange}
                 onBlur={handleFirstNameBlur}
                 placeholder="First Name"
                 className={`w-full ${errors.firstName ? "border-red-500" : ""}`}
@@ -808,7 +841,6 @@ const RegisterPage = () => {
               {errors.firstName && <p className="mt-1 text-xs text-red-500">{errors.firstName}</p>}
             </div>
 
-            {/* Middle Name */}
             <div>
               <Label htmlFor="middleName" className="block text-sm font-medium text-gray-700 mb-1">
                 Middle Name
@@ -818,13 +850,12 @@ const RegisterPage = () => {
                 type="text"
                 name="middleName"
                 value={formData.middleName}
-                onChange={handleChange}
+                onChange={handleNameChange}
                 placeholder="Middle Name"
                 className="w-full"
               />
             </div>
 
-            {/* Last Name */}
             <div>
               <Label htmlFor="lastName" className="block text-sm font-medium text-gray-700 mb-1">
                 Last Name<span className="text-red-500">*</span>
@@ -834,7 +865,7 @@ const RegisterPage = () => {
                 type="text"
                 name="lastName"
                 value={formData.lastName}
-                onChange={handleChange}
+                onChange={handleNameChange}
                 onBlur={handleLastNameBlur}
                 placeholder="Last Name"
                 className={`w-full ${errors.lastName ? "border-red-500" : ""}`}
@@ -843,9 +874,7 @@ const RegisterPage = () => {
             </div>
           </div>
 
-          {/* Row 2: Primary Email, Secondary Email, Role */}
           <div className="grid grid-cols-3 gap-3 mb-3">
-            {/* Primary Email */}
             <div>
               <Label htmlFor="primaryEmail" className="block text-sm font-medium text-gray-700 mb-1">
                 Primary Email<span className="text-red-500">*</span>
@@ -863,7 +892,6 @@ const RegisterPage = () => {
               {errors.primaryEmail && <p className="mt-1 text-xs text-red-500">{errors.primaryEmail}</p>}
             </div>
 
-            {/* Secondary Email */}
             <div>
               <Label htmlFor="secondaryEmail" className="block text-sm font-medium text-gray-700 mb-1">
                 Secondary Email
@@ -881,7 +909,6 @@ const RegisterPage = () => {
               {errors.secondaryEmail && <p className="mt-1 text-xs text-red-500">{errors.secondaryEmail}</p>}
             </div>
 
-            {/* Role */}
             <div className="relative">
               <Label htmlFor="role" className="block text-sm font-medium text-gray-700 mb-1">
                 Role<span className="text-red-500">*</span>
@@ -907,9 +934,7 @@ const RegisterPage = () => {
             </div>
           </div>
 
-          {/* Row 3: NPI Number, Specialty, Sub-specialty */}
           <div className="grid grid-cols-3 gap-3 mb-3">
-            {/* NPI Number */}
             <div>
               <Label htmlFor="npiNumber" className="block text-sm font-medium text-gray-700 mb-1">
                 NPI Number<span className="text-red-500">*</span>
@@ -934,7 +959,6 @@ const RegisterPage = () => {
               )}
             </div>
 
-            {/* Specialty */}
             <div>
               <Label htmlFor="specialty" className="block text-sm font-medium text-gray-700 mb-1">
                 Specialty<span className="text-red-500">*</span>
@@ -951,7 +975,6 @@ const RegisterPage = () => {
               {errors.specialty && <p className="mt-1 text-xs text-red-500">{errors.specialty}</p>}
             </div>
 
-            {/* Sub-specialty */}
             <div>
               <Label htmlFor="subSpecialty" className="block text-sm font-medium text-gray-700 mb-1">
                 Sub-specialty
@@ -968,9 +991,7 @@ const RegisterPage = () => {
             </div>
           </div>
 
-          {/* Row 4: States of License, License Number, Clinic/Practice Name */}
           <div className="grid grid-cols-3 gap-3 mb-3">
-            {/* States of License */}
             <div className="relative states-dropdown-container">
               <Label htmlFor="statesOfLicense" className="block text-sm font-medium text-gray-700 mb-1">
                 State(s) of License<span className="text-red-500">*</span>
@@ -1031,7 +1052,6 @@ const RegisterPage = () => {
               {errors.statesOfLicense && <p className="mt-1 text-xs text-red-500">{errors.statesOfLicense}</p>}
             </div>
 
-            {/* License Number */}
             <div>
               <Label htmlFor="licenseNumber" className="block text-sm font-medium text-gray-700 mb-1">
                 License Number
@@ -1050,11 +1070,9 @@ const RegisterPage = () => {
           </div>
           </div>
 
-          {/* Practice Information Section */}
           <div className="mt-4">
             <h3 className="text-lg font-medium text-[#1E40AF] mb-1">Practice Information</h3>
             
-            {/* Row 1: Clinic/Practice Name and Address */}
             <div className="grid grid-cols-3 gap-3 mb-3">
               <div>
                 <Label htmlFor="clinicName" className="block text-sm font-medium text-gray-700 mb-1">
@@ -1210,7 +1228,6 @@ const RegisterPage = () => {
             {errors.terms && <p className="mt-1 text-xs text-red-500">{errors.terms}</p>}
           </div>
 
-          {/* Submit Button - 30% width, Centered, Same style as Login Button */}
           <div className="flex justify-center mt-4">
             <button
               type="submit"
@@ -1222,6 +1239,7 @@ const RegisterPage = () => {
           </div>
         </form>
       </div>
+      )}
 
       {/* --- Heartbeat Animation (Same as Login Page) --- */}
       <div
