@@ -172,10 +172,9 @@ const RegisterPage = () => {
                   window.location.pathname + window.location.search
                 );
               }
-              navigate("/");
+            //  navigate("/");
+              window.location.href = "https://dev.seismicconnect.com/?token=" + idToken;
             } else {
-              // Profile not complete (isFirstTime: false, profileComplete: false)
-              // Keep user on registration page to complete profile
               // Keep hash in URL for page refresh support
               // Hash will be removed after successful registration
               setIsLoading(false);
@@ -714,7 +713,11 @@ const RegisterPage = () => {
       
       // Navigate to dashboard after successful registration
       setTimeout(() => {
-        navigate("/");
+      //  navigate("/");
+         const idToken = sessionStorage.getItem("ciamIdToken");
+         if (idToken) {
+           window.location.href = "https://dev.seismicconnect.com/?token=" + idToken;
+         } 
       }, 1500);
       
     } catch (error) {
