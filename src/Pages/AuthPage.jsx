@@ -169,7 +169,7 @@ const AuthPage = () => {
                     <div className="w-2 h-2 rounded-full bg-blue-600"></div>
                   )}
                 </div>
-                <span>Clinic / LeapGen</span>
+                <span>Clinic</span>
               </div>
             </div>
           </label>
