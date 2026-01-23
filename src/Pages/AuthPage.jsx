@@ -17,6 +17,8 @@ const AuthPage = () => {
   useEffect(() => {
     document.title = "Login - Seismic Connect";
     const timer = setTimeout(() => setShowBranding(true), 800);
+    // Reset loading state when component mounts (e.g., when user navigates back)
+    setIsLoading(false);
     return () => clearTimeout(timer);
   }, []);
 
@@ -113,9 +115,9 @@ const AuthPage = () => {
         </p>
 
         {/* Radio Button Selection - Pill Shaped */}
-        <div className="flex gap-2 mb-6 bg-gray-100 p-1 rounded-full w-full">
+        <div className="flex justify-center mb-6">
           {/* Standalone Radio */}
-          <label className="flex-1 cursor-pointer">
+          <label className="cursor-pointer">
             <input
               type="radio"
               name="accessType"
@@ -124,7 +126,7 @@ const AuthPage = () => {
               onChange={(e) => setSelectedType(e.target.value)}
               className="hidden"
             />
-            <div className={`px-4 py-2.5 rounded-full text-center text-sm font-medium transition-all ${
+            <div className={`px-5 py-2.5 rounded-full text-center text-sm font-medium tracking-wide transition-all ${
               selectedType === "standalone"
                 ? "bg-blue-600 text-white shadow-sm"
                 : "text-gray-600 hover:text-gray-900"
@@ -139,12 +141,12 @@ const AuthPage = () => {
                     <div className="w-2 h-2 rounded-full bg-blue-600"></div>
                   )}
                 </div>
-                <span>Standalone</span>
+                <span className="tracking-wide">Standalone</span>
               </div>
             </div>
           </label>
 
-          {/* Clinic Radio */}
+          {/* Clinic Radio
           <label className="flex-1 cursor-pointer">
             <input
               type="radio"
@@ -172,7 +174,7 @@ const AuthPage = () => {
                 <span>Clinic</span>
               </div>
             </div>
-          </label>
+          </label> */}
         </div>
        
         {/* Sign In Button */}

@@ -318,8 +318,77 @@ const RegisterPage = () => {
     setErrors(prev => ({ ...prev, [name]: "" }));
   };
 
+  // NPI verification function
+  const verifyNPI = async (npiNumber) => {
+    if (!npiNumber || !validateNPI(npiNumber)) {
+      return;
+    }
+
+    setIsVerifyingNpi(true);
+    setErrors(prev => ({ ...prev, npiNumber: "" }));
+
+    try {
+      const response = await fetch(`${BACKEND_URL}api/verify-npi`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          npiNumber: npiNumber,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = errorData.message || errorData.error || "NPI verification failed";
+        setErrors(prev => ({ ...prev, npiNumber: errorMessage }));
+        setIsNpiVerified(false);
+        toast({
+          title: "NPI Verification Failed",
+          description: errorMessage,
+          variant: "destructive",
+        });
+      } else {
+        const data = await response.json();
+        
+        if (data.valid === true) {
+          setIsNpiVerified(true);
+          setErrors(prev => ({ ...prev, npiNumber: "" }));
+          toast({
+            title: "NPI Verified",
+            description: "Your NPI number has been verified successfully.",
+            variant: "default",
+          });
+        } else {
+          // NPI is not valid
+          const errorMessage = data.reason || "NPI not found or invalid";
+          setErrors(prev => ({ ...prev, npiNumber: errorMessage }));
+          setIsNpiVerified(false);
+          toast({
+            title: "NPI Verification Failed",
+            description: errorMessage,
+            variant: "destructive",
+          });
+        }
+      }
+    } catch (error) {
+      console.error("NPI verification error:", error);
+      const errorMessage = error.message || "Failed to verify NPI. Please try again.";
+      setErrors(prev => ({ 
+        ...prev, 
+        npiNumber: errorMessage
+      }));
+      setIsNpiVerified(false);
+      toast({
+        title: "NPI Verification Error",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    } finally {
+      setIsVerifyingNpi(false);
+    }
+  };
+
   // Handle numeric input for NPI and License Number (only allow numbers)
-  const handleNumericChange = (e) => {
+  const handleNumericChange = async (e) => {
     const { name, value } = e.target;
     const numericValue = value.replace(/\D/g, '');
     
@@ -329,6 +398,11 @@ const RegisterPage = () => {
     
     setFormData(prev => ({ ...prev, [name]: numericValue }));
     setErrors(prev => ({ ...prev, [name]: "" }));
+
+    // Automatically verify NPI when 10 digits are entered
+    if (name === "npiNumber" && numericValue.length === 10 && validateNPI(numericValue)) {
+      await verifyNPI(numericValue);
+    }
   };
 
   // Validate fields on blur
@@ -350,75 +424,16 @@ const RegisterPage = () => {
     }
   };
 
-  const handleNPIBlur = async () => {
+  const handleNPIBlur = () => {
     if (formData.npiNumber && !validateNPI(formData.npiNumber)) {
       setErrors(prev => ({ ...prev, npiNumber: "NPI must be exactly 10 digits" }));
       setIsNpiVerified(false);
       return;
     }
 
-    if (formData.npiNumber && validateNPI(formData.npiNumber) && !isNpiVerified) {
-      setIsVerifyingNpi(true);
-      setErrors(prev => ({ ...prev, npiNumber: "" }));
-
-      try {
-        const response = await fetch(`${BACKEND_URL}api/verify-npi`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            npiNumber: formData.npiNumber,
-          }),
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          const errorMessage = errorData.message || errorData.error || "NPI verification failed";
-          setErrors(prev => ({ ...prev, npiNumber: errorMessage }));
-          setIsNpiVerified(false);
-          toast({
-            title: "NPI Verification Failed",
-            description: errorMessage,
-            variant: "destructive",
-          });
-        } else {
-          const data = await response.json();
-          
-          if (data.valid === true) {
-            setIsNpiVerified(true);
-            setErrors(prev => ({ ...prev, npiNumber: "" }));
-            toast({
-              title: "NPI Verified",
-              description: "Your NPI number has been verified successfully.",
-              variant: "default",
-            });
-          } else {
-            // NPI is not valid
-            const errorMessage = data.reason || "NPI not found or invalid";
-            setErrors(prev => ({ ...prev, npiNumber: errorMessage }));
-            setIsNpiVerified(false);
-            toast({
-              title: "NPI Verification Failed",
-              description: errorMessage,
-              variant: "destructive",
-            });
-          }
-        }
-      } catch (error) {
-        console.error("NPI verification error:", error);
-        const errorMessage = error.message || "Failed to verify NPI. Please try again.";
-        setErrors(prev => ({ 
-          ...prev, 
-          npiNumber: errorMessage
-        }));
-        setIsNpiVerified(false);
-        toast({
-          title: "NPI Verification Error",
-          description: errorMessage,
-          variant: "destructive",
-        });
-      } finally {
-        setIsVerifyingNpi(false);
-      }
+    // If NPI is valid but not verified yet, verify it
+    if (formData.npiNumber && validateNPI(formData.npiNumber) && !isNpiVerified && !isVerifyingNpi) {
+      verifyNPI(formData.npiNumber);
     } else if (formData.npiNumber && validateNPI(formData.npiNumber)) {
       // Clear error if format is valid
       setErrors(prev => ({ ...prev, npiNumber: "" }));
@@ -971,7 +986,7 @@ const RegisterPage = () => {
                 type="text"
                 name="specialty"
                 value={formData.specialty}
-                onChange={handleChange}
+                onChange={handleNameChange}
                 placeholder="Specialty"
                 className={`w-full ${errors.specialty ? "border-red-500" : ""}`}
               />
@@ -987,7 +1002,7 @@ const RegisterPage = () => {
                 type="text"
                 name="subSpecialty"
                 value={formData.subSpecialty}
-                onChange={handleChange}
+                onChange={handleNameChange}
                 placeholder="Sub-specialty"
                 className="w-full"
               />
@@ -1025,7 +1040,7 @@ const RegisterPage = () => {
                         <Checkbox
                           checked={formData.statesOfLicense.includes(state)}
                           onCheckedChange={() => handleStateToggle(state)}
-                          className="w-4 h-4 border-2 border-gray-300 rounded bg-white data-[state=checked]:bg-[#1E40AF] data-[state=checked]:border-[#1E40AF]"
+                          className="w-4 h-4 border-2 border-gray-300 rounded bg-white data-[state=checked]:bg-[#1E40AF] data-[state=checked]:border-[#1E40AF] data-[state=checked]:text-white"
                         />
                         <span className="ml-2 text-sm text-gray-700">{state}</span>
                       </label>
@@ -1064,7 +1079,7 @@ const RegisterPage = () => {
                 type="text"
                 name="licenseNumber"
                 value={formData.licenseNumber}
-                onChange={handleChange}
+                onChange={handleNumericChange}
                 placeholder="License Number"
                 className="w-full"
               />
@@ -1211,7 +1226,7 @@ const RegisterPage = () => {
                     setErrors(prev => ({ ...prev, terms: "" }));
                   }
                 }}
-                className="w-4 h-4 border-2 border-gray-300 rounded bg-white data-[state=checked]:bg-[#1E40AF] data-[state=checked]:border-[#1E40AF] focus:outline-none focus:ring-2 focus:ring-[#3B82F6] focus:ring-offset-2 cursor-pointer"
+                className="w-4 h-4 border-2 border-gray-300 rounded bg-white data-[state=checked]:bg-[#1E40AF] data-[state=checked]:border-[#1E40AF] data-[state=checked]:text-white focus:outline-none focus:ring-2 focus:ring-[#3B82F6] focus:ring-offset-2 cursor-pointer"
               />
               <Label htmlFor="terms" className="text-sm text-gray-600 cursor-pointer">
                 I agree to{" "}
