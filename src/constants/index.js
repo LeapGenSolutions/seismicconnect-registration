@@ -9,7 +9,7 @@ export const REDIRECT_URI = "https://test.seismicconnect.com/"
 export const CHATBOT_URL = "https://sesmic-test.azurewebsites.net/";
 export const CIAM_AUTH_URL = "https://leapgenaiexternal.ciamlogin.com/526922da-32fc-472e-a268-3875f1d50517/oauth2/v2.0/authorize"
 export const CIAM_CLIENT_ID = "e8f47d33-02b8-4467-b0d8-8f705b07a463"
-export const CIAM_REDIRECT_URI = "https://test.seismicconnect.com/standalone/registration"
+export const CIAM_REDIRECT_URI = "https://registration.seismicconnect.com/standalone/registration"
 //export const CIAM_REDIRECT_URI = "http://localhost:3001/standalone/registration"
 
 
