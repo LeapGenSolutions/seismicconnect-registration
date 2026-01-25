@@ -7,7 +7,7 @@ import { CIAM_AUTH_URL, CIAM_CLIENT_ID, CIAM_REDIRECT_URI } from "../constants";
 
 
 const AuthPage = () => {
-  const [isLoading, setIsLoading] = useState(false);
+//  const [isLoading, setIsLoading] = useState(false);
   const [selectedType, setSelectedType] = useState("standalone"); // Default to standalone
   const [, setShowBranding] = useState(false);
   // const [isGuestLoading, setIsGuestLoading] = useState(false);
@@ -18,7 +18,7 @@ const AuthPage = () => {
     document.title = "Login - Seismic Connect";
     const timer = setTimeout(() => setShowBranding(true), 800);
     // Reset loading state when component mounts (e.g., when user navigates back)
-    setIsLoading(false);
+//    setIsLoading(false);
     return () => clearTimeout(timer);
   }, []);
 
@@ -33,7 +33,7 @@ const AuthPage = () => {
 
   // MSAL Login (Clinic/Internal Users) - Feature 1.1 & 1.2
   const handleMSALLogin = () => {
-    setIsLoading(true);
+//    setIsLoading(true);
     // Store auth type for route guards (Feature 1.3)
     sessionStorage.setItem("authType", "msal");
     sessionStorage.setItem("authIntent", "clinic");
@@ -46,13 +46,13 @@ const AuthPage = () => {
       })
       .catch((e) => {
         console.error("MSAL login error:", e);
-        setIsLoading(false);
+//        setIsLoading(false);
       });
   };
 
   // CIAM Login (Standalone Users) - Feature 2.1 & 2.2
   const handleCIAMLogin = () => {
-    setIsLoading(true);
+//    setIsLoading(true);
     // Store auth type for route guards (Feature 1.3)
     sessionStorage.setItem("authType", "ciam");
     sessionStorage.setItem("authIntent", "standalone");
@@ -180,10 +180,9 @@ const AuthPage = () => {
         {/* Sign In Button */}
         <button
           onClick={handleSignIn}
-          disabled={isLoading}
           className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-[#1E40AF] to-[#3B82F6] hover:from-[#1E3A8A] hover:to-[#2563EB] text-white font-semibold py-3 rounded-lg transition-all duration-200 transform hover:scale-[1.02] mb-4"
         >
-          {isLoading ? "Signing in..." : "Sign in"}
+          {"Sign in"}
         </button>
 
         {/* Continue as Guest Button - commented out */}
