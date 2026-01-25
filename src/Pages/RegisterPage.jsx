@@ -173,7 +173,7 @@ const RegisterPage = () => {
                 );
               }
             //  navigate("/");
-              window.location.href = "https://dev.seismicconnect.com/?token=" + idToken;
+              window.location.href = "https:/test.seismicconnect.com/?token=" + idToken;
             } else {
               // Keep hash in URL for page refresh support
               // Hash will be removed after successful registration
@@ -731,7 +731,7 @@ const RegisterPage = () => {
       //  navigate("/");
          const idToken = sessionStorage.getItem("ciamIdToken");
          if (idToken) {
-           window.location.href = "https://dev.seismicconnect.com/?token=" + idToken;
+           window.location.href = "https://test.seismicconnect.com/?token=" + idToken;
          } 
       }, 1500);
       
