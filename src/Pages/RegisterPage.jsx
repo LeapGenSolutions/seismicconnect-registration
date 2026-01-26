@@ -173,7 +173,9 @@ const RegisterPage = () => {
                 );
               }
             //  navigate("/");
-              window.location.href = "https:/test.seismicconnect.com/?token=" + idToken;
+              // Force absolute redirect - use assign for proper navigation
+              const fullUrl = `https://test.seismicconnect.com/?token=${encodeURIComponent(idToken)}`;
+              window.location.assign(fullUrl);
             } else {
               // Keep hash in URL for page refresh support
               // Hash will be removed after successful registration
@@ -731,7 +733,9 @@ const RegisterPage = () => {
       //  navigate("/");
          const idToken = sessionStorage.getItem("ciamIdToken");
          if (idToken) {
-           window.location.href = "https://test.seismicconnect.com/?token=" + idToken;
+           // Force absolute redirect - use assign for proper navigation
+           const fullUrl = `https://test.seismicconnect.com/?token=${encodeURIComponent(idToken)}`;
+           window.location.assign(fullUrl);
          } 
       }, 1500);
       
