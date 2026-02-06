@@ -575,22 +575,26 @@ const RegisterPage = () => {
       hasError = true;
     }
 
-    // Validate clinic fields for clinic signup type
+    // Clinic/Practice name is always mandatory
+    if (!formData.clinicName) {
+      newErrors.clinicName = "Clinic/Practice name is required";
+      hasError = true;
+    }
+
+    // Practice state is always mandatory
+    if (!formData.practiceAddress.state) {
+      newErrors.practiceAddress.state = "State is required";
+      hasError = true;
+    }
+    
+    // Validate additional clinic fields for clinic signup type
     if (signupType === "clinic") {
-      if (!formData.clinicName) {
-        newErrors.clinicName = "Clinic/Practice name is required";
-        hasError = true;
-      }
       if (!formData.practiceAddress.street) {
         newErrors.practiceAddress.street = "Street address is required";
         hasError = true;
       }
       if (!formData.practiceAddress.city) {
         newErrors.practiceAddress.city = "City is required";
-        hasError = true;
-      }
-      if (!formData.practiceAddress.state) {
-        newErrors.practiceAddress.state = "State is required";
         hasError = true;
       }
       if (!formData.practiceAddress.zip) {
@@ -1098,11 +1102,7 @@ const RegisterPage = () => {
             <div className="grid grid-cols-3 gap-3 mb-3">
               <div>
                 <Label htmlFor="clinicName" className="block text-sm font-medium text-gray-700 mb-1">
-                  {signupType === "clinic" ? (
-                    <>Clinic/Practice Name<span className="text-red-500">*</span></>
-                  ) : (
-                    "Clinic/Practice Name"
-                  )}
+                  Clinic/Practice Name<span className="text-red-500">*</span>
                 </Label>
                 <Input
                   id="clinicName"
@@ -1165,11 +1165,7 @@ const RegisterPage = () => {
               {/* State */}
               <div className="relative">
                 <Label htmlFor="practiceAddressState" className="block text-sm font-medium text-gray-700 mb-1">
-                  {signupType === "clinic" ? (
-                    <>State<span className="text-red-500">*</span></>
-                  ) : (
-                    "State"
-                  )}
+                  State<span className="text-red-500">*</span>
                 </Label>
                 <Select 
                   value={formData.practiceAddress.state} 
