@@ -25,10 +25,14 @@ const VideoCallPage = () => {
   const dispatch = useDispatch();
   const userName = useSelector((state) => state.me.me.given_name);
   const myEmail = useSelector((state) => state.me.me.email);
+  const clinicName = useSelector((state) => state.me.me.clinicName);
   const appointments = useSelector((state) => state.appointments.appointments);
   const { toast } = useToast();
 
   const today = format(new Date(), "yyyy-MM-dd");
+  const isAppointmentSelected = Boolean(appointmentId);
+  const isOnlineAppointment = appointmentType === "online";
+  const canStartVideoCall = isAppointmentSelected, canShowVideoControls = isAppointmentSelected && isOnlineAppointment;
 
   useEffect(() => {
     document.title = "VideoCall - Seismic Connect";
@@ -36,9 +40,10 @@ const VideoCallPage = () => {
 
   useEffect(() => {
     if (myEmail) {
-      dispatch(fetchAppointmentDetails(myEmail));
+      dispatch(fetchAppointmentDetails(myEmail, clinicName));
     }
-  }, [dispatch, myEmail]);
+  }, [dispatch, myEmail, clinicName]);
+
   useEffect(() => {
     const todayAppointments = appointments.filter(
       (appt) => appt.appointment_date === today && appt.status !== "cancelled"
@@ -71,6 +76,17 @@ const VideoCallPage = () => {
     const apptDateTime = new Date(`${appt.appointment_date}T${appt.time}`);
     if (apptDateTime < now) return false;
 
+    const normalize = (s) => (s || "").trim().toLowerCase();
+    const userClinic = normalize(clinicName);
+    const apptClinic = normalize(
+      appt.clinicName ||
+      appt.details?.clinicName ||
+      appt.original_json?.clinicName ||
+      appt.original_json?.details?.clinicName
+    );
+
+    if (userClinic && apptClinic !== userClinic) return false;
+
     return true;
   });
 
@@ -96,9 +112,7 @@ const VideoCallPage = () => {
       setRoom(roomParam);
       setActiveTab("join");
 
-      const appointment = sortedAppointments.find(
-        (app) => app.id === roomParam
-      );
+      const appointment = sortedAppointments.find((app) => app.id === roomParam);
 
       if (appointment) {
         setAppointmentDetails(appointment);
@@ -106,14 +120,37 @@ const VideoCallPage = () => {
         setInvalidMeetingId(true);
       }
     }
-    
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sortedAppointments]);
 
   const queryParams = new URLSearchParams(window.location.search);
   const role = queryParams.get("role") || "doctor";
+  useEffect(() => {
+    if (appointmentType === "in-person") {
+      setShowShareLink(false);
+      setJoinLink("");
+    }
+
+    // If user switches to Online AFTER selecting appointment, generate link
+    if (appointmentType === "online" && appointmentId) {
+      generateJoinLink(appointmentId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appointmentType, appointmentId]);
 
   const handleAppointmentSelect = (selectedAppointmentId) => {
+    // if user chooses the placeholder option again, reset fields
+    if (!selectedAppointmentId) {
+      setAppointmentId("");
+      setRoom("");
+      setShowShareLink(false);
+      setJoinLink("");
+      setAppointmentDetails(null);
+      setInvalidMeetingId(false);
+      return;
+    }
+
     const appointment = sortedAppointments.find(
       (app) => app.id === selectedAppointmentId
     );
@@ -126,7 +163,12 @@ const VideoCallPage = () => {
     setAppointmentId(selectedAppointmentId);
     setRoom(selectedAppointmentId);
     setAppointmentDetails(appointment);
-    generateJoinLink(selectedAppointmentId);
+    if (appointmentType === "online") {
+      generateJoinLink(selectedAppointmentId);
+    } else {
+      setShowShareLink(false);
+      setJoinLink("");
+    }
   };
 
   const generateJoinLink = (selectedAppointmentId) => {
@@ -146,44 +188,39 @@ const VideoCallPage = () => {
 
   const joinAsParticipant = (room, name) => {
     navigate(
-      `/meeting-room/${encodeURIComponent(
-        room
-      )}?role=patient&name=${encodeURIComponent(userName)}`
+      `/meeting-room/${encodeURIComponent(room)}?role=patient&name=${encodeURIComponent(
+        userName
+      )}`
     );
   };
 
   const joinAsDoctor = (room) => {
     navigate(
-      `/meeting-room/${encodeURIComponent(
-        room
-      )}?patient=${encodeURIComponent(selectedAppointment.full_name)}`
+      `/meeting-room/${encodeURIComponent(room)}?patient=${encodeURIComponent(
+        selectedAppointment.full_name
+      )}`
     );
   };
 
-const SortedAppointmentsComponent = () =>
-  sortedAppointments.map((appointment) => {
-    let formattedStart = "Time not set";
-    if (appointment.time && typeof appointment.time === "string") {
-      const parsedTime = parse(
-        appointment.time.trim(),
-        "HH:mm",
-        new Date()
-      );
-      if (!Number.isNaN(parsedTime.getTime())) {
-        formattedStart = format(parsedTime, "h:mm a");
+  const SortedAppointmentsComponent = () =>
+    sortedAppointments.map((appointment) => {
+      let formattedStart = "Time not set";
+      if (appointment.time && typeof appointment.time === "string") {
+        const parsedTime = parse(appointment.time.trim(), "HH:mm", new Date());
+        if (!Number.isNaN(parsedTime.getTime())) {
+          formattedStart = format(parsedTime, "h:mm a");
+        }
       }
-    }
-    const capitalizedStatus =
-      appointment.status
-        ? appointment.status.charAt(0).toUpperCase() +
-          appointment.status.slice(1)
+      const capitalizedStatus = appointment.status
+        ? appointment.status.charAt(0).toUpperCase() + appointment.status.slice(1)
         : "Unknown";
-    return (
-      <option key={appointment.id} value={appointment.id}>
-        {appointment.full_name} – {formattedStart} ({capitalizedStatus})
-      </option>
-    );
-  });
+      return (
+        <option key={appointment.id} value={appointment.id}>
+          {appointment.full_name} – {formattedStart} ({capitalizedStatus})
+        </option>
+      );
+    });
+
   return (
     <div className="space-y-6 px-4">
       <PageNavigation
@@ -212,11 +249,10 @@ const SortedAppointmentsComponent = () =>
                 {role === "doctor" && (
                   <button
                     onClick={() => setActiveTab("upcoming")}
-                    className={`inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium transition-all ${
-                      activeTab === "upcoming"
-                        ? "bg-white text-gray-900 shadow-sm"
-                        : "hover:text-gray-900"
-                    }`}
+                    className={`inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium transition-all ${activeTab === "upcoming"
+                      ? "bg-white text-gray-900 shadow-sm"
+                      : "hover:text-gray-900"
+                      }`}
                   >
                     Upcoming Calls
                   </button>
@@ -225,11 +261,10 @@ const SortedAppointmentsComponent = () =>
                 {role === "patient" && (
                   <button
                     onClick={() => setActiveTab("join")}
-                    className={`inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium transition-all ${
-                      activeTab === "join"
-                        ? "bg-white text-gray-900 shadow-sm"
-                        : "hover:text-gray-900"
-                    }`}
+                    className={`inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium transition-all ${activeTab === "join"
+                      ? "bg-white text-gray-900 shadow-sm"
+                      : "hover:text-gray-900"
+                      }`}
                   >
                     Join by ID
                   </button>
@@ -238,11 +273,10 @@ const SortedAppointmentsComponent = () =>
                 {role === "doctor" && (
                   <button
                     onClick={() => setActiveTab("history")}
-                    className={`inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium transition-all ${
-                      activeTab === "history"
-                        ? "bg-white text-gray-900 shadow-sm"
-                        : "hover:text-gray-900"
-                    }`}
+                    className={`inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium transition-all ${activeTab === "history"
+                      ? "bg-white text-gray-900 shadow-sm"
+                      : "hover:text-gray-900"
+                      }`}
                   >
                     Call History
                   </button>
@@ -257,17 +291,15 @@ const SortedAppointmentsComponent = () =>
                       htmlFor="appointment"
                       className="text-sm font-medium text-gray-700"
                     >
-                      Select an appointment
+                      Select An Appointment
                     </label>
                     <div className="relative">
                       <select
                         value={appointmentId}
-                        onChange={(e) =>
-                          handleAppointmentSelect(e.target.value)
-                        }
+                        onChange={(e) => handleAppointmentSelect(e.target.value)}
                         className="flex h-10 w-full items-center justify-between rounded-md border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        <option value="">Select an appointment</option>
+                        <option value="">Select An Appointment</option>
                         {isLoadingUpcoming ? (
                           <option disabled>Loading appointments...</option>
                         ) : sortedAppointments.length > 0 ? (
@@ -336,9 +368,7 @@ const SortedAppointmentsComponent = () =>
                           </span>
                         </div>
                         <div>
-                          <span className="text-gray-500">
-                            Appointment ID:
-                          </span>
+                          <span className="text-gray-500">Appointment ID:</span>
                           <span className="ml-2 font-medium">
                             {selectedAppointment.id}
                           </span>
@@ -372,37 +402,35 @@ const SortedAppointmentsComponent = () =>
                           className="border border-gray-300 rounded-lg px-4 w-full py-2 mb-4"
                         />
                       </label>
-                      <label className="block text-gray-700 mb-2 flex-1">
-                        {isHost
-                          ? "Meeting ID"
-                          : "Meeting ID (from invite link)"}
-                        <input
-                          placeholder="Meeting ID"
-                          value={room}
-                          onChange={(e) => setRoom(e.target.value)}
-                          className="border border-gray-300 rounded-lg px-4 w-full py-2 mb-4"
-                        />
-                      </label>
+
+                      {canShowVideoControls && (
+                        <label className="block text-gray-700 mb-2 flex-1">
+                          {isHost ? "Meeting ID" : "Meeting ID (from invite link)"}
+                          <input
+                            placeholder="Meeting ID"
+                            value={room}
+                            onChange={(e) => setRoom(e.target.value)}
+                            readOnly
+                            className="border border-gray-300 rounded-lg px-4 w-full py-2 mb-4 bg-gray-50"
+                          />
+                        </label>
+                      )}
                     </div>
                   </div>
 
-                  <div className="flex justify-end space-x-2 mt-4">
-                    <button
-                      onClick={() => {
-                        if (!room) {
-                          alert("Please select an appointment first");
-                          return;
-                        }
-                        joinAsDoctor(room, userName);
-                      }}
-                      className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors bg-blue-600 hover:bg-blue-700 text-white h-10 px-4 py-2"
-                    >
-                      <FaVideo className="mr-2" />
-                      Start Video Call
-                    </button>
-                  </div>
+                  {canStartVideoCall && (
+                    <div className="flex justify-end space-x-2 mt-4">
+                      <button
+                        onClick={() => joinAsDoctor(room)}
+                        className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors bg-blue-600 hover:bg-blue-700 text-white h-10 px-4 py-2"
+                      >
+                        <FaVideo className="mr-2" />
+                        Start Video Call
+                      </button>
+                    </div>
+                  )}
 
-                  {showShareLink && appointmentType === "online" && (
+                  {showShareLink && canShowVideoControls && (
                     <div className="mt-6 w-full flex justify-center">
                       <div className="bg-gray-100 rounded-lg px-6 py-4 w-full max-w-xl shadow-sm">
                         <h3 className="font-medium text-gray-800 text-sm mb-2">

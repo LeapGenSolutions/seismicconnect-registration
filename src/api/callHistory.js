@@ -31,21 +31,36 @@ export const fetchCallHistory = async (emails) => {
   return response.json();
 };
 
-export const fetchDoctorsFromHistory = async () => {
-  const response = await fetch(api(`/api/call-history/doctors`));
+export const fetchDoctorsFromHistory = async (clinicName) => {
+  let url = `/api/call-history/doctors`;
+  if (clinicName) {
+    url += `?clinicName=${encodeURIComponent(clinicName)}`;
+  }
+  const response = await fetch(api(url));
   if (!response.ok) {
     throw new Error("Failed to fetch Call History data");
   }
   return response.json();
 };
 
-export const fetchAppointmentsByDoctorEmails = async (emails) => {
-  if (!emails || emails.length === 0) return [];
+export const fetchAppointmentsByDoctorEmails = async (emails, clinicName = "") => {
+  // If clinicName is provided, we fetch by clinic using the new efficient endpoint
+  // AND we ignore the emails list because the clinic filter is paramount.
+
+  if ((!emails || emails.length === 0) && !clinicName) return [];
 
   try {
-    const response = await fetch(
-      api(`/api/appointments/${emails.join(",")}`)
-    );
+    let url;
+    if (clinicName) {
+      // Use the new dedicated endpoint for clinic-wide fetching
+      url = `/api/appointments/all?clinicName=${encodeURIComponent(clinicName)}`;
+    } else {
+      // Fallback to existing email-based fetching
+      const emailPath = (emails && emails.length > 0) ? emails.join(",") : "all";
+      url = `/api/appointments/${emailPath}`;
+    }
+
+    const response = await fetch(api(url));
     if (!response.ok) throw new Error("Failed to fetch appointments");
 
     const data = await response.json();
@@ -58,6 +73,8 @@ export const fetchAppointmentsByDoctorEmails = async (emails) => {
 
 // Helper to check Seismified status. Backend returns: { found: [ids], notFound: [ids] }
 export const checkAppointments = async (appointmentIDs) => {
+  if (!appointmentIDs || appointmentIDs.length === 0)
+    return { found: [], notFound: [] };
   if (!appointmentIDs || appointmentIDs.length === 0)
     return { found: [], notFound: [] };
 

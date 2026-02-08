@@ -1,12 +1,14 @@
 import { BACKEND_URL } from "../constants";
 import { patientActions } from "./patients-slice";
 
-export const fetchPatientsDetails = () => {
+export const fetchPatientsDetails = (clinicName) => {
     return async (dispatch) => {
         const fetchPatients = async () => {
-            const response = await fetch(
-                `${BACKEND_URL}/api/patients`
-            );
+            let url = `${BACKEND_URL}/api/patients`;
+            if (clinicName) {
+                url += `?clinicName=${encodeURIComponent(clinicName)}`;
+            }
+            const response = await fetch(url);
 
             if (!response.ok) {
                 throw new Error('Could not fetch appointment data!');

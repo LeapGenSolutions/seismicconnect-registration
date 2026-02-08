@@ -12,7 +12,7 @@ const Header = () => {
     <header className="bg-white border-b border-neutral-200">
       {/* Make it a single row by default, allow wrap only when it gets really tight */}
       <div className="px-3 sm:px-6 py-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
-        
+
         {/* --- Left Navigation --- */}
         <nav
           className="
@@ -25,44 +25,40 @@ const Header = () => {
         >
           <Link
             href="/documentation"
-            className={`px-2 sm:px-3 py-1 text-sm sm:text-base cursor-pointer transition-colors ${
-              isActive("/documentation")
-                ? "font-bold underline underline-offset-4 text-black"
-                : "text-neutral-600 hover:text-black"
-            }`}
+            className={`px-2 sm:px-3 py-1 text-sm sm:text-base cursor-pointer transition-colors ${isActive("/documentation")
+              ? "font-bold underline underline-offset-4 text-black"
+              : "text-neutral-600 hover:text-black"
+              }`}
           >
             Documentation
           </Link>
 
           <Link
             href="/connect"
-            className={`px-2 sm:px-3 py-1 text-sm sm:text-base transition-colors ${
-              isActive("/connect")
-                ? "font-bold underline underline-offset-4 text-black"
-                : "text-neutral-600 hover:text-black"
-            }`}
+            className={`px-2 sm:px-3 py-1 text-sm sm:text-base transition-colors ${isActive("/connect")
+              ? "font-bold underline underline-offset-4 text-black"
+              : "text-neutral-600 hover:text-black"
+              }`}
           >
             Connect
           </Link>
 
           <Link
             href="/about"
-            className={`px-2 sm:px-3 py-1 text-sm sm:text-base transition-colors ${
-              isActive("/about")
-                ? "font-bold underline underline-offset-4 text-black"
-                : "text-neutral-600 hover:text-black"
-            }`}
+            className={`px-2 sm:px-3 py-1 text-sm sm:text-base transition-colors ${isActive("/about")
+              ? "font-bold underline underline-offset-4 text-black"
+              : "text-neutral-600 hover:text-black"
+              }`}
           >
             About Us
           </Link>
 
           <Link
             href="/contact"
-            className={`px-2 sm:px-3 py-1 text-sm sm:text-base transition-colors ${
-              isActive("/contact")
-                ? "font-bold underline underline-offset-4 text-black"
-                : "text-neutral-600 hover:text-black"
-            }`}
+            className={`px-2 sm:px-3 py-1 text-sm sm:text-base transition-colors ${isActive("/contact")
+              ? "font-bold underline underline-offset-4 text-black"
+              : "text-neutral-600 hover:text-black"
+              }`}
           >
             Contact Us
           </Link>
@@ -76,6 +72,13 @@ const Header = () => {
             flex-shrink-0
           "
         >
+          {/* Clinic Name */}
+          {user && (
+            <span className="text-sm font-medium text-neutral-600">
+              {user.clinicName || "Clinic Not Set"}
+            </span>
+          )}
+
           {/* Bell Icon */}
           <button className="p-1.5 sm:p-2 text-neutral-500 hover:text-neutral-700 hover:bg-neutral-100 rounded-full">
             <Bell className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -101,7 +104,7 @@ const Header = () => {
               </p>
               {/* Hide role on very small screens to save height */}
               <p className="text-xs text-neutral-500">
-                {user?.specialty || user?.role || "Staff"}
+                {user?.role || "Staff"}
               </p>
             </div>
           </div>

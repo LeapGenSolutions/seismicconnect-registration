@@ -2,7 +2,7 @@ import { Card, CardContent } from "../ui/card";
 import { useSelector } from "react-redux";
 import { useEffect, useRef, useState } from "react";
 import { Chart, registerables } from "chart.js";
-import { checkAppointments } from "../../api/callHistory";
+import { checkAppointments, fetchAppointmentsByDoctorEmails } from "../../api/callHistory";
 
 //Chart.register(...registerables);
 
@@ -37,14 +37,6 @@ const WEEK_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const TODAY_INDEX = new Date().getDay(); // 0–6, Sun–Sat
 
 export default function ProviderWorkload() {
-  // Appointments slice
-  const appointments = useSelector(
-    (state) =>
-      state.appointment?.appointments ||
-      state.appointments?.appointments ||
-      []
-  );
-
   // Logged-in doctor (same as WelcomeCard & Status Overview)
   const loggedInDoctor = useSelector((state) => state.me.me);
 
@@ -52,27 +44,19 @@ export default function ProviderWorkload() {
   const doctorName =
     loggedInDoctor?.fullName ||
     loggedInDoctor?.name ||
-    `${loggedInDoctor?.given_name || ""} ${
-      loggedInDoctor?.family_name || ""
-    }`.trim() ||
+    `${loggedInDoctor?.given_name || ""} ${loggedInDoctor?.family_name || ""
+      }`.trim() ||
     loggedInDoctor?.email?.split("@")[0] ||
     "Doctor";
 
-  // Specialty (doctor → user → fallback from an appointment)
+  // Specialty
   const specialty =
     loggedInDoctor?.specialty ||
     loggedInDoctor?.speciality ||
-    appointments.find((a) => a.specialization)?.specialization ||
     null;
 
   const DoctorEmail =
     loggedInDoctor?.email || loggedInDoctor?.doctor_email || null;
-
-  const doctorUniqueId =
-    loggedInDoctor?.doctor_id ||
-    loggedInDoctor?.id ||
-    loggedInDoctor?.oid ||
-    null;
 
   const [isLoading, setIsLoading] = useState(true);
   const [weeklyCounts, setWeeklyCounts] = useState({
@@ -85,15 +69,13 @@ export default function ProviderWorkload() {
   const chartInstanceRef = useRef(null);
 
   // --- Compute weekly totals + seismified / non-seismified ------------------
+
+
   useEffect(() => {
     const computeWeekly = async () => {
       setIsLoading(true);
 
-      if (
-        !Array.isArray(appointments) ||
-        !DoctorEmail ||
-        !doctorUniqueId
-      ) {
+      if (!DoctorEmail) {
         setWeeklyCounts({
           total: Array(7).fill(0),
           seismified: Array(7).fill(0),
@@ -103,90 +85,106 @@ export default function ProviderWorkload() {
         return;
       }
 
-      const now = new Date();
-      const startOfWeek = new Date(
-        now.getFullYear(),
-        now.getMonth(),
-        now.getDate() - now.getDay(), // Sunday
-        0,
-        0,
-        0,
-        0
-      );
-      const endOfWeek = new Date(
-        startOfWeek.getFullYear(),
-        startOfWeek.getMonth(),
-        startOfWeek.getDate() + 7,
-        0,
-        0,
-        0,
-        0
-      );
-
-      const totalArr = Array(7).fill(0);
-      const seismArr = Array(7).fill(0);
-      const nonSeismArr = Array(7).fill(0);
-
-      // 1) Filter to this doctor + this week, and keep dayIndex per appt
-      const weeklyAppts = [];
-
-      for (const app of appointments) {
-        // doctor filter (same as Status Overview)
-        const isSameDoctor =
-          app.doctorId === doctorUniqueId ||
-          app.doctor_id === doctorUniqueId ||
-          app.doctorEmail === DoctorEmail ||
-          app.doctor_email === DoctorEmail;
-
-        if (!isSameDoctor) continue;
-
-        const rawDate = app.appointment_date || app.appointmentDate;
-        if (!rawDate) continue;
-
-        let d;
-
-        // If we get a plain "YYYY-MM-DD", treat it as LOCAL date, not UTC
-        if (typeof rawDate === "string" && rawDate.length === 10) {
-          // This form ("YYYY-MM-DDT00:00:00") is parsed as local time
-          d = new Date(rawDate + "T00:00:00");
-        } else {
-          d = new Date(rawDate);
-        }
-
-        if (isNaN(d.getTime())) continue;
-        if (d < startOfWeek || d >= endOfWeek) continue;
-
-        const dayIndex = d.getDay(); // 0–6, Sun–Sat
-        weeklyAppts.push({ app, dayIndex });
-
-        // total appointments per day (includes cancelled)
-        totalArr[dayIndex] += 1;
-      }
-
-      // 2) Active (non-cancelled) appointments for seismification
-      const activeWeeklyAppts = weeklyAppts.filter(
-        ({ app }) => app.status !== "cancelled"
-      );
-
-      const appointmentIDs = activeWeeklyAppts
-        .map(
-          ({ app }) =>
-            app.id || app.appointmentID || app.appointmentId
-        )
-        .filter(Boolean);
-
-      if (appointmentIDs.length === 0) {
-        // no active appointments -> all seismified/non are 0
-        setWeeklyCounts({
-          total: totalArr,
-          seismified: seismArr,
-          nonSeismified: nonSeismArr,
-        });
-        setIsLoading(false);
-        return;
-      }
+      const normalize = (s) => (s || "").trim().toLowerCase();
+      const userClinic = normalize(loggedInDoctor?.clinicName);
 
       try {
+        // Fetch appointments specifically for this doctor & clinic
+        const data = await fetchAppointmentsByDoctorEmails([DoctorEmail], userClinic);
+
+        let flatAppointments = [];
+        if (Array.isArray(data)) {
+          // Handle nested structure similar to AppointmentCalendar
+          if (data.length > 0 && data[0]?.data && Array.isArray(data[0].data)) {
+            flatAppointments = data.flatMap(day => day.data || []);
+          } else if (data.data && Array.isArray(data.data)) {
+            flatAppointments = data.data; // Should not happen if data is array, but safety check
+          } else {
+            flatAppointments = data;
+          }
+        } else if (data?.data && Array.isArray(data.data)) {
+          flatAppointments = data.data;
+        } else {
+          flatAppointments = [];
+        }
+
+        const now = new Date();
+        const startOfWeek = new Date(
+          now.getFullYear(),
+          now.getMonth(),
+          now.getDate() - now.getDay(), // Sunday
+          0,
+          0,
+          0,
+          0
+        );
+        const endOfWeek = new Date(
+          startOfWeek.getFullYear(),
+          startOfWeek.getMonth(),
+          startOfWeek.getDate() + 7,
+          0,
+          0,
+          0,
+          0
+        );
+
+        const totalArr = Array(7).fill(0);
+        const seismArr = Array(7).fill(0);
+        const nonSeismArr = Array(7).fill(0);
+
+        // 1) Filter to this week, and keep dayIndex per appt
+        const weeklyAppts = [];
+
+        for (const app of flatAppointments) {
+          // We rely on API for basic filtering, but double check doctor if needed.
+          // Since we passed [DoctorEmail] to API, it should be correct.
+          // Clinic filtering is also done by API (strict if userClinic is present).
+
+          const rawDate = app.appointment_date || app.appointmentDate;
+          if (!rawDate) continue;
+
+          let d;
+          if (typeof rawDate === "string" && rawDate.length === 10) {
+            d = new Date(rawDate + "T00:00:00");
+          } else {
+            d = new Date(rawDate);
+          }
+
+          if (isNaN(d.getTime())) continue;
+
+          if (d < startOfWeek || d >= endOfWeek) {
+            continue;
+          }
+
+          const dayIndex = d.getDay(); // 0–6, Sun–Sat
+          weeklyAppts.push({ app, dayIndex });
+
+          // total appointments per day (includes cancelled)
+          totalArr[dayIndex] += 1;
+        }
+
+        // 2) Active (non-cancelled) appointments for seismification
+        const activeWeeklyAppts = weeklyAppts.filter(
+          ({ app }) => app.status !== "cancelled"
+        );
+
+        const appointmentIDs = activeWeeklyAppts
+          .map(
+            ({ app }) =>
+              app.id || app.appointmentID || app.appointmentId
+          )
+          .filter(Boolean);
+
+        if (appointmentIDs.length === 0) {
+          setWeeklyCounts({
+            total: totalArr,
+            seismified: seismArr,
+            nonSeismified: nonSeismArr,
+          });
+          setIsLoading(false);
+          return;
+        }
+
         // Backend returns: { found: [ids], notFound: [ids] }
         const { found = [] } = await checkAppointments(appointmentIDs);
         const foundSet = new Set(found);
@@ -208,16 +206,13 @@ export default function ProviderWorkload() {
           seismified: seismArr,
           nonSeismified: nonSeismArr,
         });
+
       } catch (err) {
-        console.error("Error computing weekly workload:", err);
-        // fallback: everything active is non-seismified
-        for (const { dayIndex } of activeWeeklyAppts) {
-          nonSeismArr[dayIndex] += 1;
-        }
+        console.error("Error fetching weekly workload:", err);
         setWeeklyCounts({
-          total: totalArr,
-          seismified: seismArr,
-          nonSeismified: nonSeismArr,
+          total: Array(7).fill(0),
+          seismified: Array(7).fill(0),
+          nonSeismified: Array(7).fill(0),
         });
       } finally {
         setIsLoading(false);
@@ -225,7 +220,7 @@ export default function ProviderWorkload() {
     };
 
     computeWeekly();
-  }, [appointments, DoctorEmail, doctorUniqueId]);
+  }, [DoctorEmail, loggedInDoctor?.clinicName]);
 
   // --- Build the Chart.js line graph ---------------------------------------
   useEffect(() => {
@@ -258,37 +253,37 @@ export default function ProviderWorkload() {
       data: {
         labels: WEEK_LABELS,
         datasets: [
-  {
-    label: "Total Appointments",
-    data: total,
-    tension: 0.3,
-    borderWidth: 2,
-    pointRadius: 3,
-    borderColor: "#2563EB",       // blue line
-    backgroundColor: "#2563EB",   // blue points
-    pointBackgroundColor: "#2563EB",
-  },
-  {
-    label: "Seismified",
-    data: seismified,
-    tension: 0.3,
-    borderWidth: 2,
-    pointRadius: 3,
-    borderColor: "#16a34a",       // green line
-    backgroundColor: "#16a34a",   // green points
-    pointBackgroundColor: "#16a34a",
-  },
-  {
-    label: "Non-Seismified",
-    data: nonSeismified,
-    tension: 0.3,
-    borderWidth: 2,
-    pointRadius: 3,
-    borderColor: "#D97706",       // orange line
-    backgroundColor: "#D97706",   // orange points
-    pointBackgroundColor: "#D97706",
-  },
-],
+          {
+            label: "Total Appointments",
+            data: total,
+            tension: 0.3,
+            borderWidth: 2,
+            pointRadius: 3,
+            borderColor: "#2563EB",       // blue line
+            backgroundColor: "#2563EB",   // blue points
+            pointBackgroundColor: "#2563EB",
+          },
+          {
+            label: "Seismified",
+            data: seismified,
+            tension: 0.3,
+            borderWidth: 2,
+            pointRadius: 3,
+            borderColor: "#16a34a",       // green line
+            backgroundColor: "#16a34a",   // green points
+            pointBackgroundColor: "#16a34a",
+          },
+          {
+            label: "Non-Seismified",
+            data: nonSeismified,
+            tension: 0.3,
+            borderWidth: 2,
+            pointRadius: 3,
+            borderColor: "#D97706",       // orange line
+            backgroundColor: "#D97706",   // orange points
+            pointBackgroundColor: "#D97706",
+          },
+        ],
 
       },
       options: {
@@ -389,58 +384,58 @@ export default function ProviderWorkload() {
         </div>
 
         {isLoading ? (
-  <div className="py-8 text-center text-gray-500 text-sm">
-    Loading weekly workload…
-  </div>
-) : !hasAnyData ? (
-  <div className="py-8 text-center text-gray-500 text-sm">
-    No appointments found for this week for the logged-in provider.
-  </div>
-) : (
-  <>
-    {/* Chart Container */}
-    <div
-      className="workload-chart-container mt-2"
-      style={{ height: 260 }}
-    >
-      <canvas ref={chartRef} className="workload-chart" />
-      <p className="w-full text-center text-gray-600 text-xs mt-3">
-        Sun–Sat view of total, seismified, and non-seismified appointments
-      </p>
-    </div>
+          <div className="py-8 text-center text-gray-500 text-sm">
+            Loading weekly workload…
+          </div>
+        ) : !hasAnyData ? (
+          <div className="py-8 text-center text-gray-500 text-sm">
+            No appointments found for this week for the logged-in provider.
+          </div>
+        ) : (
+          <>
+            {/* Chart Container */}
+            <div
+              className="workload-chart-container mt-2"
+              style={{ height: 260 }}
+            >
+              <canvas ref={chartRef} className="workload-chart" />
+              <p className="w-full text-center text-gray-600 text-xs mt-3">
+                Sun–Sat view of total, seismified, and non-seismified appointments
+              </p>
+            </div>
 
-        {/* Weekly Summary Section */}
-    <div className="mt-8 pt-5">
-      <div className="text-sm font-semibold text-gray-900 mb-2">
-        Weekly summary of appointments
-      </div>
+            {/* Weekly Summary Section */}
+            <div className="mt-8 pt-5">
+              <div className="text-sm font-semibold text-gray-900 mb-2">
+                Weekly summary of appointments
+              </div>
 
-      <div className="flex flex-col items-start text-sm text-gray-800 gap-1">
-        <div>
-          <span className="font-medium">Total: </span>
-          <span className="font-bold" style={{ color: "#2563EB" }}>
-            {weekTotal}
-          </span>
-        </div>
+              <div className="flex flex-col items-start text-sm text-gray-800 gap-1">
+                <div>
+                  <span className="font-medium">Total: </span>
+                  <span className="font-bold" style={{ color: "#2563EB" }}>
+                    {weekTotal}
+                  </span>
+                </div>
 
-        <div>
-          <span className="font-medium">Seismified: </span>
-          <span className="font-bold" style={{ color: "#059669" }}>
-            {weekSeismified}
-          </span>
-        </div>
+                <div>
+                  <span className="font-medium">Seismified: </span>
+                  <span className="font-bold" style={{ color: "#059669" }}>
+                    {weekSeismified}
+                  </span>
+                </div>
 
-        <div>
-          <span className="font-medium">Non-seismified: </span>
-          <span className="font-bold" style={{ color: "#D97706" }}>
-            {weekNonSeismified}
-          </span>
-        </div>
-      </div>
-    </div>
+                <div>
+                  <span className="font-medium">Non-seismified: </span>
+                  <span className="font-bold" style={{ color: "#D97706" }}>
+                    {weekNonSeismified}
+                  </span>
+                </div>
+              </div>
+            </div>
 
-  </>
-)}        
+          </>
+        )}
       </CardContent>
     </Card>
   );
