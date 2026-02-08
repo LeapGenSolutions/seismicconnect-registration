@@ -103,15 +103,14 @@ const AppointmentStatus = ({ date }) => {
         ? localTodayKey
         : date
       : date instanceof Date
-      ? format(date, "yyyy-MM-dd")
-      : localTodayKey;
+        ? format(date, "yyyy-MM-dd")
+        : localTodayKey;
 
-  // Always refetch when Dashboard mounts or doctor changes
   useEffect(() => {
     if (DoctorEmail) {
-      dispatch(fetchAppointmentDetails(DoctorEmail));
+      dispatch(fetchAppointmentDetails(DoctorEmail, loggedInDoctor?.clinicName));
     }
-  }, [dispatch, DoctorEmail]);
+  }, [dispatch, DoctorEmail, loggedInDoctor?.clinicName]);
 
   // Helper to decide if an appointment time has already passed (today)
   const isAppointmentPast = useCallback(
@@ -176,7 +175,17 @@ const AppointmentStatus = ({ date }) => {
           app.doctorEmail === DoctorEmail ||
           app.doctor_email === DoctorEmail;
 
-        return isToday && isSameDoctor;
+        const normalize = (s) => (s || "").trim().toLowerCase();
+        const userClinic = normalize(loggedInDoctor?.clinicName);
+        const apptClinic = normalize(
+          app.clinicName ||
+          app.details?.clinicName ||
+          app.original_json?.clinicName ||
+          app.original_json?.details?.clinicName
+        );
+        const matchesClinic = !userClinic || apptClinic === userClinic;
+
+        return isToday && isSameDoctor && matchesClinic;
       });
 
       // Cancelled and rescheduled counts
@@ -241,7 +250,7 @@ const AppointmentStatus = ({ date }) => {
     };
 
     computeStats();
-  }, [appointments, todayKey, doctorUniqueId, DoctorEmail, isAppointmentPast]);
+  }, [appointments, todayKey, doctorUniqueId, DoctorEmail, isAppointmentPast, loggedInDoctor?.clinicName]);
 
   if (isLoading) {
     return (
@@ -338,9 +347,8 @@ const AppointmentStatus = ({ date }) => {
         {STATUS_CARDS.map((card) => (
           <div
             key={card.key}
-            className={`flex items-center justify-between rounded-lg px-3 py-2.5 text-sm ${
-              card.key === "cancelled" ? "col-span-2" : ""
-            }`}
+            className={`flex items-center justify-between rounded-lg px-3 py-2.5 text-sm ${card.key === "cancelled" ? "col-span-2" : ""
+              }`}
             style={{ background: card.color }}
             title={KPI_TOOLTIPS[card.key]}
           >

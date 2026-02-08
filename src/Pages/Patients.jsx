@@ -26,7 +26,7 @@ import DoctorMultiSelect from "../components/DoctorMultiSelect";
 import { Link } from "wouter";
 import { PageNavigation } from "../components/ui/page-navigation";
 import CreateAppointmentModal from "../components/appointments/CreateAppointmentModal";
-import { checkAppointments } from "../api/callHistory";  
+import { checkAppointments } from "../api/callHistory";
 import { formatUsDate } from "../lib/dateUtils";
 
 const maskInsuranceId = (id) => {
@@ -79,10 +79,14 @@ function Patients() {
   const [showAddModal, setShowAddModal] = useState(false);
 
   const [seismifiedIds, setSeismifiedIds] = useState([]);   /* ✅ ADDED */
-  
+
   useEffect(() => {
-    dispatch(fetchPatientsDetails());
-  }, [dispatch]);
+    if (loggedInDoctor?.clinicName) {
+      dispatch(fetchPatientsDetails(loggedInDoctor.clinicName));
+    } else {
+      dispatch(fetchPatientsDetails());
+    }
+  }, [dispatch, loggedInDoctor?.clinicName]);
 
   useEffect(() => {
     if (
@@ -159,9 +163,24 @@ function Patients() {
     const endStr = normalizeDate(endDate);
 
     const filteredAppointments = appointments.filter((appt) => {
-      const doctorMatch =
-        !selectedDoctors.length ||
-        selectedDoctors.includes(appt.doctor_email);
+      const normalize = (s) => (s || "").trim().toLowerCase();
+      const userClinic = normalize(loggedInDoctor?.clinicName);
+      const apptClinic = normalize(
+        appt.clinicName ||
+        appt.details?.clinicName ||
+        appt.original_json?.clinicName ||
+        appt.original_json?.details?.clinicName
+      );
+
+      const clinicMatch = !userClinic || !apptClinic || apptClinic === userClinic;
+
+      // If user has a clinic, we show ALL clinic appointments, ignoring specific selected doctors
+      // UNLESS the user explicitly wants to filter within their clinic.
+      // Current requirement: "Entire website filtered based on clinicName" implied we show EVERYTHING for that clinic.
+
+      const doctorMatch = userClinic
+        ? true // If clinic is set, we show all clinic data (primary filter)
+        : (!selectedDoctors.length || selectedDoctors.includes(appt.doctor_email));
 
       const apptDateStr = normalizeDate(getUnifiedApptDate(appt));
 
@@ -169,7 +188,7 @@ function Patients() {
         (!startStr || apptDateStr >= startStr) &&
         (!endStr || apptDateStr <= endStr);
 
-      return doctorMatch && dateMatch;
+      return clinicMatch && doctorMatch && dateMatch;
     });
 
     const latestByPatient = {};
@@ -184,7 +203,7 @@ function Patients() {
         if (
           !latestByPatient[pid] ||
           new Date(unifiedDate) >
-            new Date(getUnifiedApptDate(latestByPatient[pid].appointment))
+          new Date(getUnifiedApptDate(latestByPatient[pid].appointment))
         ) {
           latestByPatient[pid] = {
             patient: matchedPatient,
@@ -211,7 +230,7 @@ function Patients() {
     );
 
     setShowPatients(results);
-  }, [patients, appointments, appointmentFilters]);
+  }, [patients, appointments, appointmentFilters, loggedInDoctor?.clinicName]);
 
   useEffect(() => {
     if (patients.length && appointments.length) enrichPatients();
@@ -260,7 +279,7 @@ function Patients() {
           </Button>
         }
       />
-      
+
 
       <Card>
         <CardHeader className="pb-3">
@@ -303,8 +322,8 @@ function Patients() {
 
                     const emailMatch = query.email
                       ? (p.email || "")
-                          .toLowerCase()
-                          .includes(query.email.toLowerCase())
+                        .toLowerCase()
+                        .includes(query.email.toLowerCase())
                       : true;
 
                     const phone = p.contactmobilephone || p.phone || "";
@@ -395,12 +414,11 @@ function Patients() {
                 </TableRow>
               ) : (
                 displayedPatients.map((p) => {
-                  const fullName = `${p.firstname || p.first_name} ${
-                    p.lastname || p.last_name
-                  }`.trim();
+                  const fullName = `${p.firstname || p.first_name} ${p.lastname || p.last_name
+                    }`.trim();
 
-                 const rawDob = getPatientDob(p);
-                 const formattedDob = formatUsDate(rawDob);
+                  const rawDob = getPatientDob(p);
+                  const formattedDob = formatUsDate(rawDob);
 
                   return (
                     <TableRow key={p.patient_id}>
@@ -438,7 +456,7 @@ function Patients() {
                             {p.appointment?.id &&
                               seismifiedIds.includes(p.appointment.id) && (
                                 <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded mt-1 inline-block">
-      
+
                                 </span>
                               )}
                           </div>

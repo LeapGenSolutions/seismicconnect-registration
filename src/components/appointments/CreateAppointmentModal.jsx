@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { useSelector, useDispatch } from "react-redux";
 import { BACKEND_URL } from "../../constants";
 import { createAppointment } from "../../api/appointment";
@@ -42,6 +43,7 @@ const extractDetails = (p) =>
   p.original_json?.details ||
   p.original_json?.original_json?.details ||
   p;
+
 const CreateAppointmentModal = ({ onClose, onSuccess }) => {
   const { toast } = useToast();
   const dispatch = useDispatch();
@@ -52,7 +54,9 @@ const CreateAppointmentModal = ({ onClose, onSuccess }) => {
 
   const loggedInDoctor = useSelector((state) => state.me.me);
   const patientsList = useSelector((state) => state.patients.patients);
+
   const [existingPatient, setExistingPatient] = useState(null);
+
   const resolvedDoctorName = loggedInDoctor?.doctor_name;
   const resolvedDoctorEmail =
     loggedInDoctor?.doctor_email || loggedInDoctor?.email;
@@ -130,6 +134,20 @@ const CreateAppointmentModal = ({ onClose, onSuccess }) => {
     }
 
     const matches = patientsList.filter((p) => {
+      const normalizeClinic = (s) => (s || "").trim().toLowerCase();
+      const userClinic = normalizeClinic(loggedInDoctor?.clinicName);
+      const patientClinic = normalizeClinic(
+        p.clinicName ||
+        p.details?.clinicName ||
+        p.original_json?.clinicName ||
+        p.original_json?.details?.clinicName
+      );
+
+      // Clinic Name check
+      if (userClinic && patientClinic !== userClinic) {
+        return false;
+      }
+
       const d = extractDetails(p);
       const full = norm(
         [getFirstName(d), getMiddleName(d), getLastName(d)]
@@ -170,39 +188,76 @@ const CreateAppointmentModal = ({ onClose, onSuccess }) => {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
+
     setFormData((p) => ({ ...p, [name]: value }));
     setTouched((p) => ({ ...p, [name]: true }));
+    setErrors((prev) => {
+      if (!prev[name]) return prev;
+      const updated = { ...prev };
+      delete updated[name];
+      return updated;
+    });
   };
-  
+
   const handlePhoneChange = (e) => {
-  const digitsOnly = e.target.value.replace(/\D/g, "").slice(0, 10);
-  setFormData((p) => ({ ...p, phone: digitsOnly }));
-  setTouched((p) => ({ ...p, phone: true }));
-};
+    const digitsOnly = e.target.value.replace(/\D/g, "").slice(0, 10);
 
-const validateForm = () => {
-  const errs = {};
-  const newTouched = {};
-  requiredFields.forEach((f) => {
-    newTouched[f] = true;
-    if (!formData[f]) errs[f] = "Required";
-  });
-  setTouched((prev) => ({ ...prev, ...newTouched }));
-  setErrors(errs);
-  return Object.keys(errs).length === 0;
-};
+    setFormData((p) => ({ ...p, phone: digitsOnly }));
+    setTouched((p) => ({ ...p, phone: true }));
+    setErrors((prev) => {
+      if (!prev.phone) return prev;
+      const updated = { ...prev };
+      delete updated.phone;
+      return updated;
+    });
+  };
 
+  const validateForm = () => {
+    const errs = {};
+    const newTouched = {};
 
-const scrollToFirstError = (errs) => {
-  const firstField = Object.keys(errs)[0];
-  if (!firstField) return;
+    requiredFields.forEach((field) => {
+      if (
+        existingPatient &&
+        ["first_name", "last_name", "dob"].includes(field)
+      ) {
+        return;
+      }
 
-  const el = document.querySelector(`[name="${firstField}"]`);
-  if (el) {
-    el.scrollIntoView({ behavior: "smooth", block: "center" });
-    el.focus();
-  }
-};
+      newTouched[field] = true;
+
+      if (!formData[field] || String(formData[field]).trim() === "") {
+        errs[field] = "Required";
+      }
+    });
+
+    // ✅ Phone validation (inline)
+    if (!existingPatient) {
+      newTouched.phone = true;
+
+      if (!formData.phone || formData.phone.trim() === "") {
+        errs.phone = "Required";
+      } else if (formData.phone.length !== 10) {
+        errs.phone = "Invalid phone number";
+      }
+    }
+
+    setTouched((prev) => ({ ...prev, ...newTouched }));
+    setErrors(errs);
+
+    return errs;
+  };
+
+  const scrollToFirstError = (errs) => {
+    const firstField = Object.keys(errs)[0];
+    if (!firstField) return;
+
+    const el = document.querySelector(`[name="${firstField}"]`);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.focus();
+    }
+  };
 
   const convertTo24Hour = (t) => {
     if (!t) return "";
@@ -213,22 +268,14 @@ const scrollToFirstError = (errs) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-   
-    if (formData.phone && formData.phone.length !== 10) {
-      toast({
-        title: "Invalid phone number",
-        description: "Phone number must be exactly 10 digits",
-        variant: "destructive",
-      });
+    //console.log("DEBUG: CreateAppointmentModal - Submitting with formData:", formData);
+    //console.log("DEBUG: CreateAppointmentModal - LoggedInDoctor:", loggedInDoctor);
+
+    const requiredErrors = validateForm();
+    if (Object.keys(requiredErrors).length > 0) {
+      scrollToFirstError(requiredErrors);
       return;
     }
-
-    const isValid = validateForm();
-    if (!isValid) {
-      scrollToFirstError(errors);
-      return;
-    }
-
 
     setIsSubmitting(true);
 
@@ -236,7 +283,6 @@ const scrollToFirstError = (errs) => {
       let patient_id;
       let practice_id;
 
-      /* ===== EXISTING PATIENT PATH (FIXED) ===== */
       if (existingPatient) {
         patient_id = extractPatientId(existingPatient);
         practice_id = extractPracticeId(existingPatient);
@@ -251,8 +297,7 @@ const scrollToFirstError = (errs) => {
           setIsSubmitting(false);
           return;
         }
-      }
-      else {
+      } else {
         const res = await fetch(`${BACKEND_URL}api/patients/add`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -266,6 +311,7 @@ const scrollToFirstError = (errs) => {
             phone: formData.phone?.replace(/\D/g, ""),
             ehr: formData.ehr,
             mrn: formData.mrn,
+            clinicName: loggedInDoctor?.clinicName || "", // Added clinicName with fallback
           }),
         });
 
@@ -307,6 +353,7 @@ const scrollToFirstError = (errs) => {
         phone: formData.phone?.replace(/\D/g, ""),
         patient_id,
         practice_id,
+        clinicName: loggedInDoctor?.clinicName || "", // Added clinicName with fallback
       };
 
       const created = await createAppointment(
@@ -336,9 +383,10 @@ const scrollToFirstError = (errs) => {
     (v) => v !== undefined && v !== null && String(v).trim() !== ""
   );
 
-  return (
+  // ✅ MODAL JSX (wrapped in portal)
+  const modalUI = (
     <div
-      className="fixed inset-0 bg-black/40 flex justify-end items-center z-50"
+      className="fixed inset-0 z-[9999] bg-black/40 flex justify-end items-center"
       onClick={(e) => {
         if (e.target === e.currentTarget) {
           if (formHasAnyValue) setShowUnsavedConfirm(true);
@@ -373,37 +421,35 @@ const scrollToFirstError = (errs) => {
             </h3>
 
             <div className="mb-3">
-            <div className="flex items-center justify-between">
-              <label className="block text-xs font-semibold text-black-600 mb-1">
-                Search by Patient Name
-              </label>
-              <button
-                type="button"
-                onClick={resetPatientAndForm}
-                className="text-xs text-blue-700 hover:text-blue-900 underline underline-offset-2"
-              >
-                Reset
-              </button>
-            </div>
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-semibold text-black-600 mb-1">
+                  Search by Patient Name
+                </label>
+                <button
+                  type="button"
+                  onClick={resetPatientAndForm}
+                  className="text-xs text-blue-700 hover:text-blue-900 underline underline-offset-2"
+                >
+                  Reset
+                </button>
+              </div>
 
-            <input
-              value={nameSearchTerm}
-              onChange={handleNameInputChange}
-              placeholder="Start typing name..."
-              className="border rounded-md w-full p-2 text-sm border-black-300"
-            />
-          </div>
+              <input
+                value={nameSearchTerm}
+                onChange={handleNameInputChange}
+                placeholder="Start typing name..."
+                className="border rounded-md w-full p-2 text-sm border-black-300"
+              />
+            </div>
 
             {nameMatches.length > 0 && (
               <div className="border rounded-md max-h-80 overflow-y-auto">
                 {nameMatches.map((p) => {
                   const d = extractDetails(p);
 
-                  const displayName = [
-                  getFirstName(d),
-                  getMiddleName(d),
-                  getLastName(d),
-                ].filter(Boolean).join(" ");
+                  const displayName = [getFirstName(d), getMiddleName(d), getLastName(d)]
+                    .filter(Boolean)
+                    .join(" ");
 
                   let formattedDOB = "—";
 
@@ -453,15 +499,15 @@ const scrollToFirstError = (errs) => {
 
                 <div className="grid grid-cols-2 gap-3 min-w-[0]">
                   <Input
-                  label="Appointment Date *"
-                  type="date"
-                  name="appointment_date"
-                  value={formData.appointment_date}
-                  min={new Date().toISOString().split("T")[0]}
-                  onChange={handleChange}
-                  error={errors.appointment_date}
-                  touched={touched.appointment_date}
-                />
+                    label="Appointment Date *"
+                    type="date"
+                    name="appointment_date"
+                    value={formData.appointment_date}
+                    min={new Date().toISOString().split("T")[0]}
+                    onChange={handleChange}
+                    error={errors.appointment_date}
+                    touched={touched.appointment_date}
+                  />
 
                   <div className="min-w-[180px]">
                     <SeismicTimeDropdown
@@ -471,7 +517,6 @@ const scrollToFirstError = (errs) => {
                       onChange={handleChange}
                       error={errors.time}
                       touched={touched.time}
-                      appointmentDate={formData.appointment_date}
                       toast={toast}
                     />
                   </div>
@@ -498,9 +543,7 @@ const scrollToFirstError = (errs) => {
                     value={formData.first_name}
                     readOnly={!!existingPatient}
                     onChange={existingPatient ? undefined : handleChange}
-                    className={
-                      existingPatient ? "bg-blue-50 cursor-not-allowed" : ""
-                    }
+                    className={existingPatient ? "bg-blue-50 cursor-not-allowed" : ""}
                     error={errors.first_name}
                     touched={touched.first_name}
                   />
@@ -511,9 +554,7 @@ const scrollToFirstError = (errs) => {
                     value={formData.middle_name}
                     readOnly={!!existingPatient}
                     onChange={existingPatient ? undefined : handleChange}
-                    className={
-                      existingPatient ? "bg-blue-50 cursor-not-allowed" : ""
-                    }
+                    className={existingPatient ? "bg-blue-50 cursor-not-allowed" : ""}
                   />
 
                   <Input
@@ -522,14 +563,12 @@ const scrollToFirstError = (errs) => {
                     value={formData.last_name}
                     readOnly={!!existingPatient}
                     onChange={existingPatient ? undefined : handleChange}
-                    className={
-                      existingPatient ? "bg-blue-50 cursor-not-allowed" : ""
-                    }
+                    className={existingPatient ? "bg-blue-50 cursor-not-allowed" : ""}
                     error={errors.last_name}
                     touched={touched.last_name}
                   />
 
-                 <Input
+                  <Input
                     type="date"
                     label="Date of Birth *"
                     name="dob"
@@ -539,14 +578,10 @@ const scrollToFirstError = (errs) => {
                     onChange={
                       existingPatient
                         ? undefined
-                        : (e) => {
-                            handleChange({
-                              target: {
-                                name: "dob",
-                                value: e.target.value, // ISO only
-                              },
-                            });
-                          }
+                        : (e) =>
+                          handleChange({
+                            target: { name: "dob", value: e.target.value },
+                          })
                     }
                     className={existingPatient ? "bg-blue-50 cursor-not-allowed" : ""}
                     error={errors.dob}
@@ -557,12 +592,10 @@ const scrollToFirstError = (errs) => {
                     label="Gender"
                     name="gender"
                     value={formData.gender}
-                    onChange={existingPatient ? () => {} : handleChange}
+                    onChange={existingPatient ? () => { } : handleChange}
                     options={["Male", "Female", "Other"]}
                     disabled={!!existingPatient}
-                    className={
-                      existingPatient ? "bg-blue-50 cursor-not-allowed" : ""
-                    }
+                    className={existingPatient ? "bg-blue-50 cursor-not-allowed" : ""}
                   />
 
                   <Input
@@ -571,23 +604,21 @@ const scrollToFirstError = (errs) => {
                     value={formData.email}
                     readOnly={!!existingPatient}
                     onChange={existingPatient ? undefined : handleChange}
-                    className={
-                      existingPatient ? "bg-blue-50 cursor-not-allowed" : ""
-                    }
+                    className={existingPatient ? "bg-blue-50 cursor-not-allowed" : ""}
                   />
 
                   <Input
-                  label="Phone Number"
-                  name="phone"
-                  value={formData.phone}
-                  readOnly={!!existingPatient}
-                  onChange={existingPatient ? undefined : handlePhoneChange}
-                  placeholder="Enter 10-digit phone number"
-                  maxLength={10}
-                  className={
-                    existingPatient ? "bg-blue-50 cursor-not-allowed" : ""
-                  }
-                />
+                    label="Phone Number"
+                    name="phone"
+                    value={formData.phone}
+                    readOnly={!!existingPatient}
+                    onChange={existingPatient ? undefined : handlePhoneChange}
+                    placeholder="Enter 10-digit phone number"
+                    maxLength={10}
+                    className={existingPatient ? "bg-blue-50 cursor-not-allowed" : ""}
+                    error={errors.phone}
+                    touched={touched.phone}
+                  />
 
                   <Input
                     label="MRN"
@@ -595,9 +626,7 @@ const scrollToFirstError = (errs) => {
                     value={formData.mrn}
                     readOnly={!!existingPatient}
                     onChange={existingPatient ? undefined : handleChange}
-                    className={
-                      existingPatient ? "bg-blue-50 cursor-not-allowed" : ""
-                    }
+                    className={existingPatient ? "bg-blue-50 cursor-not-allowed" : ""}
                     error={errors.mrn}
                     touched={touched.mrn}
                   />
@@ -639,6 +668,8 @@ const scrollToFirstError = (errs) => {
       </div>
     </div>
   );
+
+  return createPortal(modalUI, document.body);
 };
 
 const Input = ({
@@ -677,9 +708,7 @@ const Input = ({
         `}
       />
 
-      {isInvalid && (
-        <p className="text-red-600 text-xs mt-1">{error}</p>
-      )}
+      {isInvalid && <p className="text-red-600 text-xs mt-1">{error}</p>}
     </div>
   );
 };

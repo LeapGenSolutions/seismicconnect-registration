@@ -17,7 +17,7 @@ import './TimelineDashboard.css';
 import { useDispatch, useSelector } from "react-redux";
 import { useEffect, useState } from "react";
 import { fetchAppointmentDetails } from "../redux/appointment-actions";
-import { format, parseISO } from "date-fns";
+import { format } from "date-fns";
 
 export function TimelineDashboard() {
   const isLoading = false;
@@ -33,34 +33,59 @@ export function TimelineDashboard() {
   });
 
   useEffect(() => {
-    if (appointments?.length === 0 && loggedInDoctor?.email) {
-      dispatch(fetchAppointmentDetails(loggedInDoctor.email));
+    // Always fetch latest data on mount to ensure freshness
+    if (loggedInDoctor?.email) {
+      dispatch(fetchAppointmentDetails(loggedInDoctor.email, loggedInDoctor.clinicName));
     }
-  }, [dispatch, appointments, loggedInDoctor?.email]);
-  
+  }, [dispatch, loggedInDoctor?.email, loggedInDoctor?.clinicName]);
 
-  useEffect(() => { 
-    const today = new Date().toLocaleDateString("en-CA");
+
+  useEffect(() => {
+    const todayDate = new Date();
+    const todayStr = format(todayDate, 'yyyy-MM-dd');
+
     const todaysAppointmentsFiltered = appointments.filter((app) => {
-      let appDate = app.appointment_date;
-      if (typeof appDate === 'string') {
-        try {
-          appDate = format(parseISO(appDate), 'yyyy-MM-dd');
-        } catch {
-          appDate = app.date;
-        }
-      }
-      return (
-        appDate === today &&
-        (app.doctorId === loggedInDoctor?.id) &&
-        app.status !== 'cancelled'
+      // 1. Clinic Filtering (Smart Strict)
+      const normalize = (s) => (s || "").trim().toLowerCase();
+      const userClinic = normalize(loggedInDoctor?.clinicName);
+      const apptClinic = normalize(
+        app.clinicName ||
+        app.details?.clinicName ||
+        app.original_json?.clinicName ||
+        app.original_json?.details?.clinicName
       );
+
+      // If user has a clinic, and appointment has a VALID BUT DIFFERENT clinic, hide it.
+      // If appointment has NO clinic (legacy), show it (as long as doctor matches).
+      // If user has a clinic, and appointment has a VALID BUT DIFFERENT clinic, hide it.
+      // If appointment has NO clinic (legacy), show it (as long as doctor matches).
+      if (userClinic && apptClinic !== userClinic) {
+        return false;
+      }
+
+      // 2. Doctor Matching
+      if (app.doctorId !== loggedInDoctor?.id) return false;
+      if (app.status === 'cancelled') return false;
+
+      // 3. Date Matching
+      const rawDate = app.appointment_date || app.date;
+      if (!rawDate) return false;
+
+      let appDateStr = '';
+      if (typeof rawDate === 'string' && rawDate.length >= 10) {
+        // Treat first 10 chars as YYYY-MM-DD
+        appDateStr = rawDate.substring(0, 10);
+      } else if (rawDate instanceof Date) {
+        appDateStr = format(rawDate, 'yyyy-MM-dd');
+      }
+
+      return appDateStr === todayStr;
     });
-    
+
     setTodayAppointments(todaysAppointmentsFiltered);
 
     const completed = todaysAppointmentsFiltered.filter(app => app.status === 'completed' && app.time < time).length;
-    const waiting = todaysAppointmentsFiltered.filter(app => 
+    const waiting = todaysAppointmentsFiltered.filter(app =>
       (app.status === 'waiting' || app.status === "in-progress") && app.time < time
     ).length;
 
@@ -120,7 +145,7 @@ export function TimelineDashboard() {
   return (
     <div className="px-4 pb-6">
       <div className="max-w-6xl mx-auto space-y-6">
-        <PageNavigation 
+        <PageNavigation
           title="Timeline Dashboard"
           subtitle="View and manage today's appointments"
           showDate={true}
@@ -217,7 +242,7 @@ export function TimelineDashboard() {
                             </Badge>
                           </div>
                           <div className="timeline-duration">
-                            {appointment?.duration !== null ? "--" : appointment?.duration + "min" }
+                            {appointment?.duration !== null ? "--" : appointment?.duration + "min"}
                           </div>
                         </div>
 

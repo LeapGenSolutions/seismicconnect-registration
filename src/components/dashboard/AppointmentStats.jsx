@@ -1,6 +1,6 @@
 import { useDispatch, useSelector } from "react-redux";
 import { useEffect, useState } from "react";
-import { FaUserMd, FaVideo} from "react-icons/fa";
+import { FaUserMd, FaVideo } from "react-icons/fa";
 import { format } from "date-fns";
 import { fetchAppointmentDetails } from "../../redux/appointment-actions";
 
@@ -20,21 +20,20 @@ const AppointmentStats = ({ date: propDate }) => {
     loggedInDoctor?.email || loggedInDoctor?.doctor_email || null;
 
   const doctorUniqueId =
-    loggedInDoctor?.doctor_id || 
-    loggedInDoctor?.id || 
-    loggedInDoctor?.oid || 
+    loggedInDoctor?.doctor_id ||
+    loggedInDoctor?.id ||
+    loggedInDoctor?.oid ||
     null;
 
   // Always normalize "today" to a yyyy-MM-dd STRING (local calendar day)
   const localTodayKey = new Date().toLocaleDateString("en-CA");
   const utcTodayKey = new Date().toISOString().slice(0, 10);
 
-  // Always fetch appointments for the logged-in doctor when dashboard loads
   useEffect(() => {
     if (DoctorEmail) {
-      dispatch(fetchAppointmentDetails(DoctorEmail));
+      dispatch(fetchAppointmentDetails(DoctorEmail, loggedInDoctor?.clinicName));
     }
-  }, [dispatch, DoctorEmail]);
+  }, [dispatch, DoctorEmail, loggedInDoctor?.clinicName]);
 
   // Always normalize "today" to a yyyy-MM-dd STRING (local calendar day)
   const todayKey =
@@ -43,8 +42,8 @@ const AppointmentStats = ({ date: propDate }) => {
         ? localTodayKey
         : propDate
       : propDate instanceof Date
-      ? format(propDate, "yyyy-MM-dd")
-      : localTodayKey;
+        ? format(propDate, "yyyy-MM-dd")
+        : localTodayKey;
 
   // Safely build a local Date from yyyy-MM-dd for display
   let formattedDate = "";
@@ -86,13 +85,23 @@ const AppointmentStats = ({ date: propDate }) => {
       // robust doctor matching (same pattern as other components)
       const isSameDoctor =
         (doctorUniqueId &&
-          (app.doctorId === doctorUniqueId || 
+          (app.doctorId === doctorUniqueId ||
             app.doctor_id === doctorUniqueId)) ||
         (DoctorEmail &&
-          (app.doctorEmail === DoctorEmail || 
+          (app.doctorEmail === DoctorEmail ||
             app.doctor_email === DoctorEmail));
 
-      return isToday && isSameDoctor && app.status !== "cancelled";
+      const normalize = (s) => (s || "").trim().toLowerCase();
+      const userClinic = normalize(loggedInDoctor?.clinicName);
+      const apptClinic = normalize(
+        app.clinicName ||
+        app.details?.clinicName ||
+        app.original_json?.clinicName ||
+        app.original_json?.details?.clinicName
+      );
+      const matchesClinic = !userClinic || apptClinic === userClinic;
+
+      return isToday && isSameDoctor && matchesClinic && app.status !== "cancelled";
     });
 
     const inPersonAppointments = todayAppointments.filter(
@@ -110,7 +119,7 @@ const AppointmentStats = ({ date: propDate }) => {
       virtualAppointments,
     });
     setIsLoading(false);
-  }, [appointments, todayKey, DoctorEmail, doctorUniqueId]);
+  }, [appointments, todayKey, DoctorEmail, doctorUniqueId, loggedInDoctor?.clinicName]);
 
   if (isLoading) {
     return (
@@ -139,7 +148,7 @@ const AppointmentStats = ({ date: propDate }) => {
           <div className="text-sm text-gray-500">{formattedDate}</div>
         </div>
         <div className="bg-blue-100 p-3 rounded-full">
-          <svg width="28" height="28" fill="none" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="8" fill="#3b82f6" opacity="0.15"/><path d="M8 7h8M8 11h8M8 15h4" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round"/></svg>
+          <svg width="28" height="28" fill="none" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="8" fill="#3b82f6" opacity="0.15" /><path d="M8 7h8M8 11h8M8 15h4" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" /></svg>
         </div>
       </div>
       <div className="flex items-center bg-blue-50 rounded-lg p-4 mb-4">

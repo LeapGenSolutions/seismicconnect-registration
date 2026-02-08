@@ -1,10 +1,12 @@
 import React, { useState } from "react";
+import { useSelector } from "react-redux";
 import { useToast } from "../../hooks/use-toast";
 import { updateAppointment } from "../../api/appointment";
 import { Calendar, Clock, User2 } from "lucide-react";
 
 const EditAppointmentModal = ({ appointment, onClose, onUpdated }) => {
   const { toast } = useToast();
+  const loggedInDoctor = useSelector((state) => state.me.me);
 
   const [formData, setFormData] = useState({
     ...appointment,
@@ -110,6 +112,7 @@ const EditAppointmentModal = ({ appointment, onClose, onUpdated }) => {
       specialization: formData.specialization,
       id: appointment.id,
       doctor_email: appointment.doctor_email,
+      clinicName: appointment.clinicName || loggedInDoctor?.clinicName || "",
     };
 
     // Normalize date to yyyy-mm-dd
@@ -309,7 +312,7 @@ const EditAppointmentModal = ({ appointment, onClose, onUpdated }) => {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl p-6 w-80 text-center">
             <p className="text-gray-800 text-sm mb-4">
-               You have some unsaved details. Do you want to leave without saving?
+              You have some unsaved details. Do you want to leave without saving?
             </p>
 
             <div className="flex justify-between mt-4">
