@@ -4,8 +4,8 @@ import { REDIRECT_URI } from "./constants";
 
 export const msalConfig = {
     auth: {
-        clientId: "529bcde4-d3c1-4896-9277-b7d72ec4f57b",
-        authority: "https://login.microsoftonline.com/b3e3a3db-e3db-4f76-9a7c-5bca46062c8c",
+        clientId: process.env.REACT_APP_MSAL_CLIENT_ID || "529bcde4-d3c1-4896-9277-b7d72ec4f57b",
+        authority: process.env.REACT_APP_MSAL_AUTHORITY || "https://login.microsoftonline.com/b3e3a3db-e3db-4f76-9a7c-5bca46062c8c",
         redirectUri: REDIRECT_URI
     },
     cache: {
@@ -31,7 +31,7 @@ export const msalConfig = {
 };
 
 export const loginRequest = {
-    scopes: ["openid", "profile","User.Read", "Directory.Read.All", "Group.Read.All", "User.Read.All"]
+    scopes: ["openid", "profile", "User.Read", "Directory.Read.All", "Group.Read.All", "User.Read.All"]
 };
 export const graphConfig = {
     graphMeEndpoint: "https://graph.microsoft.com/v1.0/me"
