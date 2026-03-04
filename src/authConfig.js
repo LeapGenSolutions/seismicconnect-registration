@@ -1,11 +1,11 @@
 import { LogLevel } from "@azure/msal-browser";
-import { REDIRECT_URI } from "./constants";
+import { REDIRECT_URI, MSAL_CLIENT_ID, MSAL_AUTHORITY } from './constants';
 
 
 export const msalConfig = {
     auth: {
-        clientId: process.env.REACT_APP_MSAL_CLIENT_ID || "529bcde4-d3c1-4896-9277-b7d72ec4f57b",
-        authority: process.env.REACT_APP_MSAL_AUTHORITY || "https://login.microsoftonline.com/b3e3a3db-e3db-4f76-9a7c-5bca46062c8c",
+        clientId: MSAL_CLIENT_ID,
+        authority: MSAL_AUTHORITY,
         redirectUri: REDIRECT_URI
     },
     cache: {
