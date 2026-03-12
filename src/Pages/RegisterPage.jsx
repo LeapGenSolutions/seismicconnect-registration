@@ -954,6 +954,7 @@ const RegisterPage = () => {
                 <SelectContent className="z-50 bg-white border border-gray-200 shadow-lg">
                   <SelectItem value="Doctor" className="cursor-pointer hover:bg-gray-100">Doctor</SelectItem>
                   <SelectItem value="Nurse Practitioner" className="cursor-pointer hover:bg-gray-100">Nurse Practitioner</SelectItem>
+                  <SelectItem value="Staff" className="cursor-pointer hover:bg-gray-100">Staff</SelectItem>
                 </SelectContent>
               </Select>
               {errors.role && <p className="mt-1 text-xs text-red-500">{errors.role}</p>}
