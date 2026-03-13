@@ -79,6 +79,19 @@ const RegisterPage = () => {
 
   const [formData, setFormData] = useState(initialFormData);
   const [errors, setErrors] = useState(initialErrors);
+  const currentRoleRef = useRef(formData.role);
+  const isStaffRole = formData.role === "Staff";
+  const shouldValidateNpi = formData.role !== "Staff";
+
+  useEffect(() => {
+    currentRoleRef.current = formData.role;
+
+    if (formData.role === "Staff") {
+      setIsNpiVerified(false);
+      setIsVerifyingNpi(false);
+      setErrors((prev) => ({ ...prev, npiNumber: "" }));
+    }
+  }, [formData.role]);
 
   useEffect(() => {
     document.title = "Register - Seismic Connect";
@@ -322,7 +335,7 @@ const RegisterPage = () => {
 
   // NPI verification function
   const verifyNPI = async (npiNumber) => {
-    if (!npiNumber || !validateNPI(npiNumber)) {
+    if (currentRoleRef.current === "Staff" || !npiNumber || !validateNPI(npiNumber)) {
       return;
     }
 
@@ -338,6 +351,10 @@ const RegisterPage = () => {
         }),
       });
 
+      if (currentRoleRef.current === "Staff") {
+        return;
+      }
+
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         const errorMessage = errorData.message || errorData.error || "NPI verification failed";
@@ -350,6 +367,10 @@ const RegisterPage = () => {
         });
       } else {
         const data = await response.json();
+
+        if (currentRoleRef.current === "Staff") {
+          return;
+        }
         
         if (data.valid === true) {
           setIsNpiVerified(true);
@@ -372,6 +393,10 @@ const RegisterPage = () => {
         }
       }
     } catch (error) {
+      if (currentRoleRef.current === "Staff") {
+        return;
+      }
+
       console.error("NPI verification error:", error);
       const errorMessage = error.message || "Failed to verify NPI. Please try again.";
       setErrors(prev => ({ 
@@ -401,6 +426,10 @@ const RegisterPage = () => {
     setFormData(prev => ({ ...prev, [name]: numericValue }));
     setErrors(prev => ({ ...prev, [name]: "" }));
 
+    if (name === "npiNumber" && isStaffRole) {
+      return;
+    }
+
     // Automatically verify NPI when 10 digits are entered
     if (name === "npiNumber" && numericValue.length === 10 && validateNPI(numericValue)) {
       await verifyNPI(numericValue);
@@ -427,6 +456,12 @@ const RegisterPage = () => {
   };
 
   const handleNPIBlur = () => {
+    if (isStaffRole) {
+      setErrors(prev => ({ ...prev, npiNumber: "" }));
+      setIsNpiVerified(false);
+      return;
+    }
+
     if (formData.npiNumber && !validateNPI(formData.npiNumber)) {
       setErrors(prev => ({ ...prev, npiNumber: "NPI must be exactly 10 digits" }));
       setIsNpiVerified(false);
@@ -554,15 +589,17 @@ const RegisterPage = () => {
       hasError = true;
     }
 
-    if (!formData.npiNumber) {
-      newErrors.npiNumber = "NPI number is required";
-      hasError = true;
-    } else if (!validateNPI(formData.npiNumber)) {
-      newErrors.npiNumber = "NPI must be exactly 10 digits";
-      hasError = true;
-    } else if (!isNpiVerified) {
-      newErrors.npiNumber = "Please verify your NPI number before submitting";
-      hasError = true;
+    if (shouldValidateNpi) {
+      if (!formData.npiNumber) {
+        newErrors.npiNumber = "NPI number is required";
+        hasError = true;
+      } else if (!validateNPI(formData.npiNumber)) {
+        newErrors.npiNumber = "NPI must be exactly 10 digits";
+        hasError = true;
+      } else if (!isNpiVerified) {
+        newErrors.npiNumber = "Please verify your NPI number before submitting";
+        hasError = true;
+      }
     }
 
     if (!formData.specialty) {
@@ -676,7 +713,7 @@ const RegisterPage = () => {
         primaryEmail: formData.primaryEmail,
         secondaryEmail: formData.secondaryEmail || undefined,
         role: formData.role,
-        npiNumber: formData.npiNumber,
+        npiNumber: shouldValidateNpi ? formData.npiNumber || undefined : undefined,
         specialty: formData.specialty,
         subSpecialty: formData.subSpecialty || undefined,
         statesOfLicense: formData.statesOfLicense,
@@ -964,7 +1001,7 @@ const RegisterPage = () => {
           <div className="grid grid-cols-3 gap-3 mb-3">
             <div>
               <Label htmlFor="npiNumber" className="block text-sm font-medium text-gray-700 mb-1">
-                NPI Number<span className="text-red-500">*</span>
+                NPI Number{shouldValidateNpi && <span className="text-red-500">*</span>}
               </Label>
               <Input
                 id="npiNumber"
@@ -973,11 +1010,11 @@ const RegisterPage = () => {
                 value={formData.npiNumber}
                 onChange={handleNumericChange}
                 onBlur={handleNPIBlur}
-                placeholder="NPI Number"
+                placeholder={isStaffRole ? "NPI Number" : "NPI Number"}
                 maxLength={10}
                 inputMode="numeric"
-                disabled={isVerifyingNpi}
-                className={`w-full ${errors.npiNumber ? "border-red-500" : isNpiVerified ? "border-green-500" : ""}`}
+                disabled={isVerifyingNpi || isStaffRole}
+                className={`w-full ${isStaffRole ? "bg-gray-50 text-gray-500 cursor-not-allowed" : ""} ${errors.npiNumber ? "border-red-500" : isNpiVerified ? "border-green-500" : ""}`}
               />
               {isVerifyingNpi && <p className="mt-1 text-xs text-blue-500">Verifying NPI...</p>}
               {!isVerifyingNpi && errors.npiNumber && <p className="mt-1 text-xs text-red-500">{errors.npiNumber}</p>}
@@ -1343,4 +1380,3 @@ const RegisterPage = () => {
 };
 
 export default RegisterPage;
-
