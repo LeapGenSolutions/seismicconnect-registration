@@ -101,7 +101,9 @@ const RegisterPage = () => {
   const skipNpiValidation = Boolean(selectedRoleConfig?.skipNpiValidation);
   const isStaffRole = skipNpiValidation;
   const shouldValidateNpi = formData.role ? !skipNpiValidation : true;
-  const shouldRequireSpecialty = formData.role ? !skipNpiValidation : true;
+  const shouldRequireSpecialty = true;
+  const specialtyValue = formData.specialty.trim()
+    || (!shouldRequireSpecialty ? formData.role.trim() : undefined);
 
   useEffect(() => {
     currentRoleRef.current = formData.role;
@@ -805,7 +807,7 @@ const RegisterPage = () => {
         secondaryEmail: formData.secondaryEmail || undefined,
         role: formData.role,
         npiNumber: shouldValidateNpi ? formData.npiNumber || undefined : undefined,
-        specialty: shouldRequireSpecialty ? formData.specialty : undefined,
+        specialty: specialtyValue,
         subSpecialty: formData.subSpecialty || undefined,
         statesOfLicense: formData.statesOfLicense,
         licenseNumber: formData.licenseNumber || undefined,
@@ -835,7 +837,14 @@ const RegisterPage = () => {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || `Registration failed: ${response.status}`);
+        const missingFieldsMessage = Array.isArray(errorData.fields) && errorData.fields.length > 0
+          ? ` Missing fields: ${errorData.fields.join(", ")}.`
+          : "";
+        const baseMessage =
+          errorData.message ||
+          errorData.error ||
+          `Registration failed: ${response.status}`;
+        throw new Error(`${baseMessage}${missingFieldsMessage}`);
       }
 
       await response.json();
@@ -1102,8 +1111,7 @@ const RegisterPage = () => {
                 value={formData.specialty}
                 onChange={handleNameChange}
                 placeholder="Specialty"
-                disabled={isStaffRole}
-                className={`w-full ${isStaffRole ? "bg-gray-50 text-gray-500 cursor-not-allowed" : ""} ${errors.specialty ? "border-red-500" : ""}`}
+                className={`w-full ${errors.specialty ? "border-red-500" : ""}`}
               />
               {errors.specialty && <p className="mt-1 text-xs text-red-500">{errors.specialty}</p>}
             </div>
