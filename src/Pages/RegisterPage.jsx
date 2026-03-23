@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { navigate } from "wouter/use-browser-location";
 import Logo from "../assets/Logo";
 import { Label } from "../components/ui/label";
@@ -6,7 +6,6 @@ import { Checkbox } from "../components/ui/checkbox";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "../components/ui/select";
 import { Input } from "../components/ui/input";
 import { BACKEND_URL } from "../constants";
-import { fetchRegistrationRoles } from "../api/rbac";
 import { US_STATES } from "../components/ui/us-states";
 import { useToast } from "../hooks/use-toast";
 import TermsDialog from "../components/TermsDialog";
@@ -66,12 +65,6 @@ const initialErrors = {
   terms: "",
 };
 
-const DEFAULT_ROLE_OPTIONS = [
-  { roleName: "Doctor", type: "system", skipNpiValidation: false },
-  { roleName: "Nurse Practitioner", type: "system", skipNpiValidation: false },
-  { roleName: "Staff", type: "system", skipNpiValidation: true },
-];
-
 const RegisterPage = () => {
   const { toast } = useToast();
   // Start with loader visible until CIAM verification / initial checks complete
@@ -83,80 +76,22 @@ const RegisterPage = () => {
   const [isVerifyingNpi, setIsVerifyingNpi] = useState(false);
   const [isStatesDropdownOpen, setIsStatesDropdownOpen] = useState(false);
   const [isTermsDialogOpen, setIsTermsDialogOpen] = useState(false);
-  const [availableRoles, setAvailableRoles] = useState(DEFAULT_ROLE_OPTIONS);
-  const [isLoadingRoles, setIsLoadingRoles] = useState(false);
 
   const [formData, setFormData] = useState(initialFormData);
   const [errors, setErrors] = useState(initialErrors);
   const currentRoleRef = useRef(formData.role);
-  const currentSkipNpiValidationRef = useRef(false);
-  const loadedClinicNameRef = useRef("");
-  const selectedRoleConfig = useMemo(
-    () =>
-      availableRoles.find((role) => role.roleName === formData.role) ||
-      DEFAULT_ROLE_OPTIONS.find((role) => role.roleName === formData.role) ||
-      null,
-    [availableRoles, formData.role]
-  );
-  const skipNpiValidation = Boolean(selectedRoleConfig?.skipNpiValidation);
-  const isStaffRole = skipNpiValidation;
-  const shouldValidateNpi = formData.role ? !skipNpiValidation : true;
-  const shouldRequireSpecialty = formData.role ? !skipNpiValidation : true;
+  const isStaffRole = formData.role === "Staff";
+  const shouldValidateNpi = formData.role !== "Staff";
 
   useEffect(() => {
     currentRoleRef.current = formData.role;
-    currentSkipNpiValidationRef.current = skipNpiValidation;
 
-    if (skipNpiValidation) {
+    if (formData.role === "Staff") {
       setIsNpiVerified(false);
       setIsVerifyingNpi(false);
-      setErrors((prev) => ({ ...prev, npiNumber: "", specialty: "" }));
+      setErrors((prev) => ({ ...prev, npiNumber: "" }));
     }
-  }, [formData.role, skipNpiValidation]);
-
-  const loadRolesForClinic = async (clinicNameInput) => {
-    const trimmedClinicName = clinicNameInput.trim();
-
-    if (!trimmedClinicName) {
-      loadedClinicNameRef.current = "";
-      setAvailableRoles(DEFAULT_ROLE_OPTIONS);
-      if (
-        currentRoleRef.current &&
-        !DEFAULT_ROLE_OPTIONS.some(
-          (role) => role.roleName === currentRoleRef.current
-        )
-      ) {
-        setFormData((prev) => ({ ...prev, role: "" }));
-      }
-      return;
-    }
-
-    if (loadedClinicNameRef.current === trimmedClinicName) {
-      return;
-    }
-
-    setIsLoadingRoles(true);
-
-    try {
-      const roles = await fetchRegistrationRoles(trimmedClinicName);
-      const nextRoles = roles.length > 0 ? roles : DEFAULT_ROLE_OPTIONS;
-      loadedClinicNameRef.current = trimmedClinicName;
-      setAvailableRoles(nextRoles);
-
-      if (
-        currentRoleRef.current &&
-        !nextRoles.some((role) => role.roleName === currentRoleRef.current)
-      ) {
-        setFormData((prev) => ({ ...prev, role: "" }));
-      }
-    } catch (error) {
-      console.error("Failed to load registration roles:", error);
-      loadedClinicNameRef.current = "";
-      setAvailableRoles(DEFAULT_ROLE_OPTIONS);
-    } finally {
-      setIsLoadingRoles(false);
-    }
-  };
+  }, [formData.role]);
 
   useEffect(() => {
     document.title = "Register - Seismic Connect";
@@ -252,7 +187,7 @@ const RegisterPage = () => {
               }
             //  navigate("/");
               // Force absolute redirect - use assign for proper navigation
-              const fullUrl = `http://localhost:3000/?token=${encodeURIComponent(idToken)}`;
+              const fullUrl = `https://care.seismicconnect.com/?token=${encodeURIComponent(idToken)}`;
               window.location.assign(fullUrl);
             } else {
               // Keep hash in URL for page refresh support
@@ -388,28 +323,6 @@ const RegisterPage = () => {
 
     // Clear error when typing
     setErrors(prev => ({ ...prev, [name]: "" }));
-
-    if (name === "clinicName") {
-      const trimmedClinicName = value.trim();
-      if (!trimmedClinicName) {
-        loadedClinicNameRef.current = "";
-        setAvailableRoles(DEFAULT_ROLE_OPTIONS);
-        if (
-          currentRoleRef.current &&
-          !DEFAULT_ROLE_OPTIONS.some(
-            (role) => role.roleName === currentRoleRef.current
-          )
-        ) {
-          setFormData((prev) => ({ ...prev, role: "" }));
-        }
-      } else if (loadedClinicNameRef.current !== trimmedClinicName) {
-        loadedClinicNameRef.current = "";
-      }
-    }
-  };
-
-  const handleClinicNameBlur = () => {
-    void loadRolesForClinic(formData.clinicName);
   };
 
   // Handle name input (letters, spaces, hyphens, apostrophes only - no numbers)
@@ -422,11 +335,7 @@ const RegisterPage = () => {
 
   // NPI verification function
   const verifyNPI = async (npiNumber) => {
-    if (
-      currentSkipNpiValidationRef.current ||
-      !npiNumber ||
-      !validateNPI(npiNumber)
-    ) {
+    if (currentRoleRef.current === "Staff" || !npiNumber || !validateNPI(npiNumber)) {
       return;
     }
 
@@ -442,7 +351,7 @@ const RegisterPage = () => {
         }),
       });
 
-      if (currentSkipNpiValidationRef.current) {
+      if (currentRoleRef.current === "Staff") {
         return;
       }
 
@@ -459,7 +368,7 @@ const RegisterPage = () => {
       } else {
         const data = await response.json();
 
-        if (currentSkipNpiValidationRef.current) {
+        if (currentRoleRef.current === "Staff") {
           return;
         }
         
@@ -484,7 +393,7 @@ const RegisterPage = () => {
         }
       }
     } catch (error) {
-      if (currentSkipNpiValidationRef.current) {
+      if (currentRoleRef.current === "Staff") {
         return;
       }
 
@@ -693,7 +602,7 @@ const RegisterPage = () => {
       }
     }
 
-    if (shouldRequireSpecialty && !formData.specialty) {
+    if (!formData.specialty) {
       newErrors.specialty = "Specialty is required";
       hasError = true;
     }
@@ -805,7 +714,7 @@ const RegisterPage = () => {
         secondaryEmail: formData.secondaryEmail || undefined,
         role: formData.role,
         npiNumber: shouldValidateNpi ? formData.npiNumber || undefined : undefined,
-        specialty: shouldRequireSpecialty ? formData.specialty : undefined,
+        specialty: formData.specialty,
         subSpecialty: formData.subSpecialty || undefined,
         statesOfLicense: formData.statesOfLicense,
         licenseNumber: formData.licenseNumber || undefined,
@@ -866,7 +775,7 @@ const RegisterPage = () => {
          const idToken = sessionStorage.getItem("ciamIdToken");
          if (idToken) {
            // Force absolute redirect - use assign for proper navigation
-           const fullUrl = `http://localhost:3000/?token=${encodeURIComponent(idToken)}`;
+           const fullUrl = `https://care.seismicconnect.com/?token=${encodeURIComponent(idToken)}`;
            window.location.assign(fullUrl);
          } 
       }, 1500);
@@ -1063,7 +972,30 @@ const RegisterPage = () => {
               {errors.secondaryEmail && <p className="mt-1 text-xs text-red-500">{errors.secondaryEmail}</p>}
             </div>
 
-            <div></div>
+            <div className="relative">
+              <Label htmlFor="role" className="block text-sm font-medium text-gray-700 mb-1">
+                Role<span className="text-red-500">*</span>
+              </Label>
+              <Select 
+                value={formData.role} 
+                onValueChange={(value) => {
+                  setFormData(prev => ({ ...prev, role: value }));
+                  setErrors(prev => ({ ...prev, role: "" }));
+                }}
+              >
+                <SelectTrigger
+                  className={`w-full ${errors.role ? "border-red-500" : ""}`}
+                >
+                  <SelectValue placeholder="Role" />
+                </SelectTrigger>
+                <SelectContent className="z-50 bg-white border border-gray-200 shadow-lg">
+                  <SelectItem value="Doctor" className="cursor-pointer hover:bg-gray-100">Doctor</SelectItem>
+                  <SelectItem value="Nurse Practitioner" className="cursor-pointer hover:bg-gray-100">Nurse Practitioner</SelectItem>
+                  <SelectItem value="Staff" className="cursor-pointer hover:bg-gray-100">Staff</SelectItem>
+                </SelectContent>
+              </Select>
+              {errors.role && <p className="mt-1 text-xs text-red-500">{errors.role}</p>}
+            </div>
           </div>
 
           <div className="grid grid-cols-3 gap-3 mb-3">
@@ -1093,7 +1025,7 @@ const RegisterPage = () => {
 
             <div>
               <Label htmlFor="specialty" className="block text-sm font-medium text-gray-700 mb-1">
-                Specialty{shouldRequireSpecialty && <span className="text-red-500">*</span>}
+                Specialty<span className="text-red-500">*</span>
               </Label>
               <Input
                 id="specialty"
@@ -1102,8 +1034,7 @@ const RegisterPage = () => {
                 value={formData.specialty}
                 onChange={handleNameChange}
                 placeholder="Specialty"
-                disabled={isStaffRole}
-                className={`w-full ${isStaffRole ? "bg-gray-50 text-gray-500 cursor-not-allowed" : ""} ${errors.specialty ? "border-red-500" : ""}`}
+                className={`w-full ${errors.specialty ? "border-red-500" : ""}`}
               />
               {errors.specialty && <p className="mt-1 text-xs text-red-500">{errors.specialty}</p>}
             </div>
@@ -1206,7 +1137,7 @@ const RegisterPage = () => {
           <div className="mt-4">
             <h3 className="text-lg font-medium text-[#1E40AF] mb-1">Practice Information</h3>
             
-            <div className="grid grid-cols-4 gap-3 mb-3">
+            <div className="grid grid-cols-3 gap-3 mb-3">
               <div>
                 <Label htmlFor="clinicName" className="block text-sm font-medium text-gray-700 mb-1">
                   Clinic/Practice Name<span className="text-red-500">*</span>
@@ -1217,44 +1148,10 @@ const RegisterPage = () => {
                   name="clinicName"
                   value={formData.clinicName}
                   onChange={handleChange}
-                  onBlur={handleClinicNameBlur}
                   placeholder="Clinic/Practice Name"
                   className={`w-full ${errors.clinicName ? "border-red-500" : ""}`}
                 />
                 {errors.clinicName && <p className="mt-1 text-xs text-red-500">{errors.clinicName}</p>}
-              </div>
-              <div className="relative">
-                <Label htmlFor="role" className="block text-sm font-medium text-gray-700 mb-1">
-                  Role<span className="text-red-500">*</span>
-                </Label>
-                <Select
-                  value={formData.role}
-                  onValueChange={(value) => {
-                    setFormData(prev => ({ ...prev, role: value }));
-                    setErrors(prev => ({ ...prev, role: "" }));
-                  }}
-                >
-                  <SelectTrigger
-                    className={`w-full ${errors.role ? "border-red-500" : ""}`}
-                  >
-                    <SelectValue
-                      placeholder={isLoadingRoles ? "Loading roles..." : "Role"}
-                    />
-                  </SelectTrigger>
-                  <SelectContent className="z-50 bg-white border border-gray-200 shadow-lg">
-                    {availableRoles.map((role) => (
-                      <SelectItem
-                        key={role.roleName}
-                        value={role.roleName}
-                        className="cursor-pointer hover:bg-gray-100"
-                      >
-                        {role.roleName}
-                        {role.type === "custom" ? " *" : ""}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {errors.role && <p className="mt-1 text-xs text-red-500">{errors.role}</p>}
               </div>
               <div className="col-span-2">
                 <Label htmlFor="practiceAddressStreet" className="block text-sm font-medium text-gray-700 mb-1">
@@ -1390,11 +1287,7 @@ const RegisterPage = () => {
           <div className="flex justify-center mt-4">
             <button
               type="submit"
-              disabled={
-                isLoading ||
-                isVerifyingNpi ||
-                (shouldValidateNpi && !isNpiVerified)
-              }
+              disabled={isLoading || !isNpiVerified || isVerifyingNpi}
               className="w-[30%] flex items-center justify-center gap-2 bg-gradient-to-r from-[#1E40AF] to-[#3B82F6] hover:from-[#1E3A8A] hover:to-[#2563EB] text-white font-semibold py-3 rounded-lg transition-all duration-200 transform hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
             >
               {isLoading ? "Registering..." : "Register"}
