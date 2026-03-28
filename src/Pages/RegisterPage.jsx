@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { navigate } from "wouter/use-browser-location";
 import Logo from "../assets/Logo";
 import { Label } from "../components/ui/label";
@@ -146,50 +146,53 @@ const RegisterPage = () => {
     }
   }, [formData.role, skipNpiValidation]);
 
-  const loadRolesForClinic = async (clinicNameInput) => {
-    const trimmedClinicName = clinicNameInput.trim();
+  const loadRolesForClinic = useCallback(
+    async (clinicNameInput) => {
+      const trimmedClinicName = clinicNameInput.trim();
 
-    if (!trimmedClinicName) {
-      loadedClinicNameRef.current = "";
-      setAvailableRoles(DEFAULT_ROLE_OPTIONS);
-      if (
-        currentRoleRef.current &&
-        !DEFAULT_ROLE_OPTIONS.some(
-          (role) => role.roleName === currentRoleRef.current
-        )
-      ) {
-        setFormData((prev) => ({ ...prev, role: "" }));
+      if (!trimmedClinicName) {
+        loadedClinicNameRef.current = "";
+        setAvailableRoles(DEFAULT_ROLE_OPTIONS);
+        if (
+          currentRoleRef.current &&
+          !DEFAULT_ROLE_OPTIONS.some(
+            (role) => role.roleName === currentRoleRef.current
+          )
+        ) {
+          setFormData((prev) => ({ ...prev, role: "" }));
+        }
+        return;
       }
-      return;
-    }
 
-    if (loadedClinicNameRef.current === trimmedClinicName) {
-      return;
-    }
-
-    setIsLoadingRoles(true);
-
-    try {
-      const roles = await fetchRegistrationRoles(trimmedClinicName);
-      const nextRoles = roles.length > 0 ? roles : DEFAULT_ROLE_OPTIONS;
-      loadedClinicNameRef.current = trimmedClinicName;
-      setAvailableRoles(nextRoles);
-
-      if (
-        currentRoleRef.current &&
-        !nextRoles.some((role) => role.roleName === currentRoleRef.current) &&
-        currentRoleRef.current !== invitationDetails?.roleName
-      ) {
-        setFormData((prev) => ({ ...prev, role: "" }));
+      if (loadedClinicNameRef.current === trimmedClinicName) {
+        return;
       }
-    } catch (error) {
-      console.error("Failed to load registration roles:", error);
-      loadedClinicNameRef.current = "";
-      setAvailableRoles(DEFAULT_ROLE_OPTIONS);
-    } finally {
-      setIsLoadingRoles(false);
-    }
-  };
+
+      setIsLoadingRoles(true);
+
+      try {
+        const roles = await fetchRegistrationRoles(trimmedClinicName);
+        const nextRoles = roles.length > 0 ? roles : DEFAULT_ROLE_OPTIONS;
+        loadedClinicNameRef.current = trimmedClinicName;
+        setAvailableRoles(nextRoles);
+
+        if (
+          currentRoleRef.current &&
+          !nextRoles.some((role) => role.roleName === currentRoleRef.current) &&
+          currentRoleRef.current !== invitationDetails?.roleName
+        ) {
+          setFormData((prev) => ({ ...prev, role: "" }));
+        }
+      } catch (error) {
+        console.error("Failed to load registration roles:", error);
+        loadedClinicNameRef.current = "";
+        setAvailableRoles(DEFAULT_ROLE_OPTIONS);
+      } finally {
+        setIsLoadingRoles(false);
+      }
+    },
+    [invitationDetails?.roleName]
+  );
 
   const redirectToMainApp = () => {
     const idToken = sessionStorage.getItem("ciamIdToken");
@@ -212,7 +215,7 @@ const RegisterPage = () => {
       setIsClinicDropdownOpen(false);
       void loadRolesForClinic(invitationDetails.clinicName);
     }
-  }, [invitationDetails]);
+  }, [invitationDetails, loadRolesForClinic]);
 
   useEffect(() => {
     if (invitationDetails || !formData.clinicName.trim()) {
