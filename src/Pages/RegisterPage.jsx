@@ -131,7 +131,8 @@ const RegisterPage = () => {
   const skipNpiValidation = Boolean(selectedRoleConfig?.skipNpiValidation);
   const isStaffRole = skipNpiValidation;
   const shouldValidateNpi = formData.role ? !skipNpiValidation : true;
-  const shouldRequireSpecialty = true;
+  const areProfessionalDetailsDisabled = isStaffRole;
+  const shouldRequireSpecialty = !isStaffRole;
   const specialtyValue = formData.specialty.trim()
     || (!shouldRequireSpecialty ? formData.role.trim() : undefined);
 
@@ -1001,7 +1002,7 @@ const RegisterPage = () => {
         description:
           registeredUser.approvalStatus === "approved"
             ? `Welcome ${formData.firstName}! Your account has been created successfully.`
-            : "Your registration is complete and is now waiting for clinic approval.",
+            : "Please contact your clinic admin to approve your request.",
         variant: "default",
       });
       
@@ -1211,10 +1212,52 @@ const RegisterPage = () => {
               {errors.secondaryEmail && <p className="mt-1 text-xs text-red-500">{errors.secondaryEmail}</p>}
             </div>
 
-            <div></div>
+            <div className="relative">
+                <Label htmlFor="role" className="block text-sm font-medium text-gray-700 mb-1">
+                  Role<span className="text-red-500">*</span>
+                </Label>
+                <Select
+                  value={formData.role}
+                  onValueChange={(value) => {
+                    setFormData(prev => ({ ...prev, role: value }));
+                    setErrors(prev => ({ ...prev, role: "" }));
+                  }}
+                  disabled={Boolean(invitationDetails)}
+                >
+                  <SelectTrigger
+                    className={`w-full ${errors.role ? "border-red-500" : ""}`}
+                  >
+                    <SelectValue
+                      placeholder={isLoadingRoles ? "Loading roles..." : "Role"}
+                    />
+                  </SelectTrigger>
+                  <SelectContent className="z-50 bg-white border border-gray-200 shadow-lg">
+                    {roleOptions.map((role) => (
+                      <SelectItem
+                        key={role.roleName}
+                        value={role.roleName}
+                        className="cursor-pointer hover:bg-gray-100"
+                      >
+                        {role.roleName}
+                        {role.type === "custom" ? " *" : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {invitationDetails ? (
+                  <p className="mt-1 text-xs text-blue-600">
+                    This role was prefilled from your invitation.
+                  </p>
+                ) : null}
+                {errors.role && <p className="mt-1 text-xs text-red-500">{errors.role}</p>}
+              </div>
+          </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-3 mb-3">
+          <div className="mt-4">
+            <h3 className="text-lg font-medium text-[#1E40AF] mb-1">Practice Information</h3>
+            
+            <div className="grid grid-cols-3 gap-3 mb-3">
             <div>
               <Label htmlFor="npiNumber" className="block text-sm font-medium text-gray-700 mb-1">
                 NPI Number{shouldValidateNpi && <span className="text-red-500">*</span>}
@@ -1250,7 +1293,8 @@ const RegisterPage = () => {
                 value={formData.specialty}
                 onChange={handleNameChange}
                 placeholder="Specialty"
-                className={`w-full ${errors.specialty ? "border-red-500" : ""}`}
+                disabled={areProfessionalDetailsDisabled}
+                className={`w-full ${areProfessionalDetailsDisabled ? "bg-gray-50 text-gray-500 cursor-not-allowed" : ""} ${errors.specialty ? "border-red-500" : ""}`}
               />
               {errors.specialty && <p className="mt-1 text-xs text-red-500">{errors.specialty}</p>}
             </div>
@@ -1266,7 +1310,8 @@ const RegisterPage = () => {
                 value={formData.subSpecialty}
                 onChange={handleNameChange}
                 placeholder="Sub-specialty"
-                className="w-full"
+                disabled={areProfessionalDetailsDisabled}
+                className={`w-full ${areProfessionalDetailsDisabled ? "bg-gray-50 text-gray-500 cursor-not-allowed" : ""}`}
               />
             </div>
           </div>
@@ -1343,17 +1388,13 @@ const RegisterPage = () => {
                 value={formData.licenseNumber}
                 onChange={handleNumericChange}
                 placeholder="License Number"
-                className="w-full"
+                disabled={areProfessionalDetailsDisabled}
+                className={`w-full ${areProfessionalDetailsDisabled ? "bg-gray-50 text-gray-500 cursor-not-allowed" : ""}`}
               />
             </div>
             <div></div>
           </div>
-          </div>
-
-          <div className="mt-4">
-            <h3 className="text-lg font-medium text-[#1E40AF] mb-1">Practice Information</h3>
-            
-            <div className="grid grid-cols-4 gap-3 mb-3">
+            <div className="grid grid-cols-3 gap-3 mb-3">
               <div ref={clinicDropdownRef} className="relative">
                 <Label htmlFor="clinicName" className="block text-sm font-medium text-gray-700 mb-1">
                   Clinic/Practice Name<span className="text-red-500">*</span>
@@ -1402,6 +1443,11 @@ const RegisterPage = () => {
                     )}
                   </div>
                 )}
+                {loadedClinicNameRef.current && loadedClinicNameRef.current.toLowerCase() === formData.clinicName.trim().toLowerCase() && !invitationDetails && (
+                  <div className="mt-2 rounded-md bg-blue-50 border border-blue-100 p-2 text-xs font-semibold text-blue-700 shadow-sm">
+                    This clinic already exists in the system.
+                  </div>
+                )}
                 {invitationDetails ? (
                   <p className="mt-1 text-xs text-blue-600">
                     This clinic was prefilled from your invitation.
@@ -1409,45 +1455,7 @@ const RegisterPage = () => {
                 ) : null}
                 {errors.clinicName && <p className="mt-1 text-xs text-red-500">{errors.clinicName}</p>}
               </div>
-              <div className="relative">
-                <Label htmlFor="role" className="block text-sm font-medium text-gray-700 mb-1">
-                  Role<span className="text-red-500">*</span>
-                </Label>
-                <Select
-                  value={formData.role}
-                  onValueChange={(value) => {
-                    setFormData(prev => ({ ...prev, role: value }));
-                    setErrors(prev => ({ ...prev, role: "" }));
-                  }}
-                  disabled={Boolean(invitationDetails)}
-                >
-                  <SelectTrigger
-                    className={`w-full ${errors.role ? "border-red-500" : ""}`}
-                  >
-                    <SelectValue
-                      placeholder={isLoadingRoles ? "Loading roles..." : "Role"}
-                    />
-                  </SelectTrigger>
-                  <SelectContent className="z-50 bg-white border border-gray-200 shadow-lg">
-                    {roleOptions.map((role) => (
-                      <SelectItem
-                        key={role.roleName}
-                        value={role.roleName}
-                        className="cursor-pointer hover:bg-gray-100"
-                      >
-                        {role.roleName}
-                        {role.type === "custom" ? " *" : ""}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {invitationDetails ? (
-                  <p className="mt-1 text-xs text-blue-600">
-                    This role was prefilled from your invitation.
-                  </p>
-                ) : null}
-                {errors.role && <p className="mt-1 text-xs text-red-500">{errors.role}</p>}
-              </div>
+              
               <div className="col-span-2">
                 <Label htmlFor="practiceAddressStreet" className="block text-sm font-medium text-gray-700 mb-1">
                   {signupType === "clinic" ? (
