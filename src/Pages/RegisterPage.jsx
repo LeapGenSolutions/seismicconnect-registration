@@ -7,7 +7,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from ".
 import { Input } from "../components/ui/input";
 import { BACKEND_URL, REDIRECT_URI } from "../constants";
 import { fetchRegistrationRoles } from "../api/rbac";
-import { searchClinics } from "../api/clinic";
+import { searchClinics } from "../api/clinics";
 import { fetchInvitationDetails } from "../api/invitations";
 import { US_STATES } from "../components/ui/us-states";
 import { useToast } from "../hooks/use-toast";

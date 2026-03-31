@@ -23,9 +23,9 @@ async function parseResponse(response, fallbackMessage) {
   return data;
 }
 
-export async function fetchInvitationDetails(invitationToken) {
+export async function searchClinics(search) {
   const response = await fetch(
-    api(`/api/invitations/token/${encodeURIComponent(invitationToken)}`),
+    api(`/api/clinics?search=${encodeURIComponent(search)}`),
     {
       headers: {
         ...getAuthHeaders(),
@@ -33,5 +33,5 @@ export async function fetchInvitationDetails(invitationToken) {
     }
   );
 
-  return parseResponse(response, "Failed to load invitation details");
+  return parseResponse(response, "Failed to search clinics");
 }
