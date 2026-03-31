@@ -1,16 +1,18 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { navigate } from "wouter/use-browser-location";
 import Logo from "../assets/Logo";
 import { Label } from "../components/ui/label";
 import { Checkbox } from "../components/ui/checkbox";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "../components/ui/select";
 import { Input } from "../components/ui/input";
-import { BACKEND_URL } from "../constants";
+import { BACKEND_URL, REDIRECT_URI } from "../constants";
 import { fetchRegistrationRoles } from "../api/rbac";
+import { searchClinics } from "../api/clinics";
+import { fetchInvitationDetails } from "../api/invitations";
 import { US_STATES } from "../components/ui/us-states";
 import { useToast } from "../hooks/use-toast";
 import TermsDialog from "../components/TermsDialog";
-import { Loader2 } from "lucide-react";
+import { Loader2, Search } from "lucide-react";
 // Helper to safely decode a JWT without validating it (backend must still verify)
 const decodeIdToken = (token) => {
   try {
@@ -24,7 +26,7 @@ const decodeIdToken = (token) => {
   }
 };
 
-
+// Initial form data structure
 const initialFormData = {
   firstName: "",
   middleName: "",
@@ -46,7 +48,7 @@ const initialFormData = {
   },
 };
 
-
+// Initial errors structure
 const initialErrors = {
   firstName: "",
   lastName: "",
@@ -71,6 +73,8 @@ const DEFAULT_ROLE_OPTIONS = [
   { roleName: "Nurse Practitioner", type: "system", skipNpiValidation: false },
   { roleName: "Staff", type: "system", skipNpiValidation: true },
 ];
+const MAIN_APP_REDIRECT_BASE = (REDIRECT_URI || "").replace(/\/+$/, "");
+const normalizeClinicName = (value = "") => value.trim().toLowerCase().replace(/\s+/g, " ");
 
 const RegisterPage = () => {
   const { toast } = useToast();
@@ -85,23 +89,52 @@ const RegisterPage = () => {
   const [isTermsDialogOpen, setIsTermsDialogOpen] = useState(false);
   const [availableRoles, setAvailableRoles] = useState(DEFAULT_ROLE_OPTIONS);
   const [isLoadingRoles, setIsLoadingRoles] = useState(false);
+  const [clinicOptions, setClinicOptions] = useState([]);
+  const [isClinicDropdownOpen, setIsClinicDropdownOpen] = useState(false);
+  const [isSearchingClinics, setIsSearchingClinics] = useState(false);
+  const [existingClinicMatch, setExistingClinicMatch] = useState("");
+  const [invitationDetails, setInvitationDetails] = useState(null);
 
   const [formData, setFormData] = useState(initialFormData);
   const [errors, setErrors] = useState(initialErrors);
   const currentRoleRef = useRef(formData.role);
   const currentSkipNpiValidationRef = useRef(false);
   const loadedClinicNameRef = useRef("");
+  const clinicDropdownRef = useRef(null);
+  const invitationToken =
+    typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search).get("invitation")
+      : null;
+  const roleOptions = useMemo(() => {
+    if (!invitationDetails?.roleName) {
+      return availableRoles;
+    }
+
+    if (availableRoles.some((role) => role.roleName === invitationDetails.roleName)) {
+      return availableRoles;
+    }
+
+    return [
+      ...availableRoles,
+      {
+        roleName: invitationDetails.roleName,
+        type: "invited",
+        skipNpiValidation: Boolean(invitationDetails.skipNpiValidation),
+      },
+    ];
+  }, [availableRoles, invitationDetails]);
   const selectedRoleConfig = useMemo(
     () =>
-      availableRoles.find((role) => role.roleName === formData.role) ||
+      roleOptions.find((role) => role.roleName === formData.role) ||
       DEFAULT_ROLE_OPTIONS.find((role) => role.roleName === formData.role) ||
       null,
-    [availableRoles, formData.role]
+    [formData.role, roleOptions]
   );
   const skipNpiValidation = Boolean(selectedRoleConfig?.skipNpiValidation);
   const isStaffRole = skipNpiValidation;
   const shouldValidateNpi = formData.role ? !skipNpiValidation : true;
-  const shouldRequireSpecialty = true;
+  const areProfessionalDetailsDisabled = isStaffRole;
+  const shouldRequireSpecialty = !isStaffRole;
   const specialtyValue = formData.specialty.trim()
     || (!shouldRequireSpecialty ? formData.role.trim() : undefined);
 
@@ -116,49 +149,145 @@ const RegisterPage = () => {
     }
   }, [formData.role, skipNpiValidation]);
 
-  const loadRolesForClinic = async (clinicNameInput) => {
-    const trimmedClinicName = clinicNameInput.trim();
+  const loadRolesForClinic = useCallback(
+    async (clinicNameInput) => {
+      const trimmedClinicName = clinicNameInput.trim();
 
-    if (!trimmedClinicName) {
-      loadedClinicNameRef.current = "";
-      setAvailableRoles(DEFAULT_ROLE_OPTIONS);
-      if (
-        currentRoleRef.current &&
-        !DEFAULT_ROLE_OPTIONS.some(
-          (role) => role.roleName === currentRoleRef.current
-        )
-      ) {
-        setFormData((prev) => ({ ...prev, role: "" }));
+      if (!trimmedClinicName) {
+        loadedClinicNameRef.current = "";
+        setAvailableRoles(DEFAULT_ROLE_OPTIONS);
+        if (
+          currentRoleRef.current &&
+          !DEFAULT_ROLE_OPTIONS.some(
+            (role) => role.roleName === currentRoleRef.current
+          )
+        ) {
+          setFormData((prev) => ({ ...prev, role: "" }));
+        }
+        return;
       }
+
+      if (loadedClinicNameRef.current === trimmedClinicName) {
+        return;
+      }
+
+      setIsLoadingRoles(true);
+
+      try {
+        const roles = await fetchRegistrationRoles(trimmedClinicName);
+        const nextRoles = roles.length > 0 ? roles : DEFAULT_ROLE_OPTIONS;
+        loadedClinicNameRef.current = trimmedClinicName;
+        setAvailableRoles(nextRoles);
+
+        if (
+          currentRoleRef.current &&
+          !nextRoles.some((role) => role.roleName === currentRoleRef.current) &&
+          currentRoleRef.current !== invitationDetails?.roleName
+        ) {
+          setFormData((prev) => ({ ...prev, role: "" }));
+        }
+      } catch (error) {
+        console.error("Failed to load registration roles:", error);
+        loadedClinicNameRef.current = "";
+        setAvailableRoles(DEFAULT_ROLE_OPTIONS);
+      } finally {
+        setIsLoadingRoles(false);
+      }
+    },
+    [invitationDetails?.roleName]
+  );
+
+  const redirectToMainApp = () => {
+    const idToken = sessionStorage.getItem("ciamIdToken");
+    if (!idToken) {
       return;
     }
 
-    if (loadedClinicNameRef.current === trimmedClinicName) {
-      return;
-    }
-
-    setIsLoadingRoles(true);
-
-    try {
-      const roles = await fetchRegistrationRoles(trimmedClinicName);
-      const nextRoles = roles.length > 0 ? roles : DEFAULT_ROLE_OPTIONS;
-      loadedClinicNameRef.current = trimmedClinicName;
-      setAvailableRoles(nextRoles);
-
-      if (
-        currentRoleRef.current &&
-        !nextRoles.some((role) => role.roleName === currentRoleRef.current)
-      ) {
-        setFormData((prev) => ({ ...prev, role: "" }));
-      }
-    } catch (error) {
-      console.error("Failed to load registration roles:", error);
-      loadedClinicNameRef.current = "";
-      setAvailableRoles(DEFAULT_ROLE_OPTIONS);
-    } finally {
-      setIsLoadingRoles(false);
-    }
+    const fullUrl = `${MAIN_APP_REDIRECT_BASE}/?token=${encodeURIComponent(idToken)}`;
+    window.location.assign(fullUrl);
   };
+
+  useEffect(() => {
+    if (invitationDetails?.clinicName) {
+      setFormData((prev) => ({
+        ...prev,
+        clinicName: invitationDetails.clinicName,
+        role: invitationDetails.roleName || prev.role,
+      }));
+      setClinicOptions([]);
+      setIsClinicDropdownOpen(false);
+      void loadRolesForClinic(invitationDetails.clinicName);
+    }
+  }, [invitationDetails, loadRolesForClinic]);
+
+  useEffect(() => {
+    const trimmedClinicName = formData.clinicName.trim();
+    const normalizedClinicName = normalizeClinicName(trimmedClinicName);
+
+    if (invitationDetails || !trimmedClinicName) {
+      setClinicOptions([]);
+      setIsSearchingClinics(false);
+      setExistingClinicMatch("");
+      return undefined;
+    }
+
+    const backendToken = sessionStorage.getItem("backendToken");
+    if (!backendToken || trimmedClinicName.length < 2) {
+      setClinicOptions([]);
+      setIsSearchingClinics(false);
+      setExistingClinicMatch("");
+      return undefined;
+    }
+
+    let active = true;
+    setExistingClinicMatch("");
+    const timeoutId = window.setTimeout(async () => {
+      setIsSearchingClinics(true);
+      try {
+        const clinics = await searchClinics(trimmedClinicName);
+        if (!active) return;
+        
+        const results = Array.isArray(clinics) ? clinics : [];
+        setClinicOptions(results);
+        
+        const matchedClinic = results.find((clinic) =>
+          normalizeClinicName(clinic?.clinicName) === normalizedClinicName
+        );
+        setExistingClinicMatch(matchedClinic?.clinicName || "");
+      } catch (error) {
+        if (!active) return;
+        console.error("Clinic search failed:", error);
+        setClinicOptions([]);
+        setExistingClinicMatch("");
+      } finally {
+        if (active) setIsSearchingClinics(false);
+      }
+    }, 300);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timeoutId);
+    };
+  }, [formData.clinicName, invitationDetails]);
+
+  useEffect(() => {
+    if (!invitationToken || invitationDetails) {
+      return;
+    }
+
+    const backendToken = sessionStorage.getItem("backendToken");
+    if (!backendToken) {
+      return;
+    }
+
+    fetchInvitationDetails(invitationToken)
+      .then((invitation) => {
+        setInvitationDetails(invitation);
+      })
+      .catch((error) => {
+        console.error("Failed to load invitation details:", error);
+      });
+  }, [invitationDetails, invitationToken]);
 
   useEffect(() => {
     document.title = "Register - Seismic Connect";
@@ -235,15 +364,20 @@ const RegisterPage = () => {
             }
             return res.json();
           })
-          .then((data) => {
+          .then(async (data) => {
             // Store the backend token for registration
             if (data.token) {
               sessionStorage.setItem("backendToken", data.token);
             }
-            
+
+            if (invitationToken && data.token) {
+              const invitation = await fetchInvitationDetails(invitationToken);
+              setInvitationDetails(invitation);
+            }
+
             // Check profileComplete status to determine redirect
             if (data.profileComplete === true) {
-              // Profile is complete - show loader and redirect to dashboard
+              // Profile is complete - redirect to main app, which now owns pending-vs-approved state
               setIsLoading(true);
               if (window.history && window.history.replaceState) {
                 window.history.replaceState(
@@ -254,8 +388,7 @@ const RegisterPage = () => {
               }
             //  navigate("/");
               // Force absolute redirect - use assign for proper navigation
-              const fullUrl = `https://test.seismicconnect.com/?token=${encodeURIComponent(idToken)}`;
-              window.location.assign(fullUrl);
+              redirectToMainApp();
             } else {
               // Keep hash in URL for page refresh support
               // Hash will be removed after successful registration
@@ -303,6 +436,11 @@ const RegisterPage = () => {
             setIsLoading(false);
           });
       } else {
+        if (invitationToken && !sessionStorage.getItem("backendToken")) {
+          navigate(`/?invitation=${encodeURIComponent(invitationToken)}`);
+          return;
+        }
+
         // Token came from sessionStorage (page refresh) - show the form
         setIsLoading(false);
       }
@@ -319,10 +457,12 @@ const RegisterPage = () => {
         variant: "destructive",
       });
       setIsLoading(false);
+    } else if (invitationToken) {
+      navigate(`/?invitation=${encodeURIComponent(invitationToken)}`);
     } else {
       setIsLoading(false);
     }
-  }, [toast]);
+  }, [invitationToken, toast]);
 
   // Clear all fields except email when signup type changes
   const isInitialMount = useRef(true);
@@ -357,13 +497,21 @@ const RegisterPage = () => {
       if (isStatesDropdownOpen && !event.target.closest('.states-dropdown-container')) {
         setIsStatesDropdownOpen(false);
       }
+
+      if (
+        isClinicDropdownOpen &&
+        clinicDropdownRef.current &&
+        !clinicDropdownRef.current.contains(event.target)
+      ) {
+        setIsClinicDropdownOpen(false);
+      }
     };
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [isStatesDropdownOpen]);
+  }, [isClinicDropdownOpen, isStatesDropdownOpen]);
 
   // Email validation
   const validateEmail = (email) => {
@@ -392,10 +540,13 @@ const RegisterPage = () => {
     setErrors(prev => ({ ...prev, [name]: "" }));
 
     if (name === "clinicName") {
+      setIsClinicDropdownOpen(true);
+      setExistingClinicMatch("");
       const trimmedClinicName = value.trim();
       if (!trimmedClinicName) {
         loadedClinicNameRef.current = "";
         setAvailableRoles(DEFAULT_ROLE_OPTIONS);
+        setClinicOptions([]);
         if (
           currentRoleRef.current &&
           !DEFAULT_ROLE_OPTIONS.some(
@@ -411,7 +562,22 @@ const RegisterPage = () => {
   };
 
   const handleClinicNameBlur = () => {
-    void loadRolesForClinic(formData.clinicName);
+    window.setTimeout(() => {
+      setIsClinicDropdownOpen(false);
+      void loadRolesForClinic(formData.clinicName);
+    }, 100);
+  };
+
+  const handleClinicSelect = (clinicName, isExisting = false) => {
+    setFormData((prev) => ({
+      ...prev,
+      clinicName,
+    }));
+    setErrors((prev) => ({ ...prev, clinicName: "" }));
+    setClinicOptions([]);
+    setIsClinicDropdownOpen(false);
+    setExistingClinicMatch(isExisting ? clinicName : "");
+    void loadRolesForClinic(clinicName);
   };
 
   // Handle name input (letters, spaces, hyphens, apostrophes only - no numbers)
@@ -817,6 +983,7 @@ const RegisterPage = () => {
         privacyAccepted: agreeToTerms,
         clinicalResponsibilityAccepted: agreeToTerms,
         signupType: signupType,
+        invitationToken: invitationToken || undefined,
       };
 
       Object.keys(payload).forEach(key => {
@@ -847,7 +1014,7 @@ const RegisterPage = () => {
         throw new Error(`${baseMessage}${missingFieldsMessage}`);
       }
 
-      await response.json();
+      const registeredUser = await response.json();
       
 
       // Mark registration as complete
@@ -856,7 +1023,10 @@ const RegisterPage = () => {
       // Show success message
       toast({
         title: "Registration Successful!",
-        description: `Welcome ${formData.firstName}! Your account has been created successfully.`,
+        description:
+          registeredUser.approvalStatus === "approved"
+            ? `Welcome ${formData.firstName}! Your account has been created successfully.`
+            : "Please contact your clinic admin to approve your request.",
         variant: "default",
       });
       
@@ -869,15 +1039,9 @@ const RegisterPage = () => {
         );
       }
       
-      // Navigate to dashboard after successful registration
+      // Hand off to the main app for both approved and pending users.
       setTimeout(() => {
-      //  navigate("/");
-         const idToken = sessionStorage.getItem("ciamIdToken");
-         if (idToken) {
-           // Force absolute redirect - use assign for proper navigation
-           const fullUrl = `https://test.seismicconnect.com/?token=${encodeURIComponent(idToken)}`;
-           window.location.assign(fullUrl);
-         } 
+         redirectToMainApp();
       }, 1500);
       
     } catch (error) {
@@ -1072,10 +1236,52 @@ const RegisterPage = () => {
               {errors.secondaryEmail && <p className="mt-1 text-xs text-red-500">{errors.secondaryEmail}</p>}
             </div>
 
-            <div></div>
+            <div className="relative">
+                <Label htmlFor="role" className="block text-sm font-medium text-gray-700 mb-1">
+                  Role<span className="text-red-500">*</span>
+                </Label>
+                <Select
+                  value={formData.role}
+                  onValueChange={(value) => {
+                    setFormData(prev => ({ ...prev, role: value }));
+                    setErrors(prev => ({ ...prev, role: "" }));
+                  }}
+                  disabled={Boolean(invitationDetails)}
+                >
+                  <SelectTrigger
+                    className={`w-full ${errors.role ? "border-red-500" : ""}`}
+                  >
+                    <SelectValue
+                      placeholder={isLoadingRoles ? "Loading roles..." : "Role"}
+                    />
+                  </SelectTrigger>
+                  <SelectContent className="z-50 bg-white border border-gray-200 shadow-lg">
+                    {roleOptions.map((role) => (
+                      <SelectItem
+                        key={role.roleName}
+                        value={role.roleName}
+                        className="cursor-pointer hover:bg-gray-100"
+                      >
+                        {role.roleName}
+                        {role.type === "custom" ? " *" : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {invitationDetails ? (
+                  <p className="mt-1 text-xs text-blue-600">
+                    This role was prefilled from your invitation.
+                  </p>
+                ) : null}
+                {errors.role && <p className="mt-1 text-xs text-red-500">{errors.role}</p>}
+              </div>
+          </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-3 mb-3">
+          <div className="mt-4">
+            <h3 className="text-lg font-medium text-[#1E40AF] mb-1">Practice Information</h3>
+            
+            <div className="grid grid-cols-3 gap-3 mb-3">
             <div>
               <Label htmlFor="npiNumber" className="block text-sm font-medium text-gray-700 mb-1">
                 NPI Number{shouldValidateNpi && <span className="text-red-500">*</span>}
@@ -1111,7 +1317,8 @@ const RegisterPage = () => {
                 value={formData.specialty}
                 onChange={handleNameChange}
                 placeholder="Specialty"
-                className={`w-full ${errors.specialty ? "border-red-500" : ""}`}
+                disabled={areProfessionalDetailsDisabled}
+                className={`w-full ${areProfessionalDetailsDisabled ? "bg-gray-50 text-gray-500 cursor-not-allowed" : ""} ${errors.specialty ? "border-red-500" : ""}`}
               />
               {errors.specialty && <p className="mt-1 text-xs text-red-500">{errors.specialty}</p>}
             </div>
@@ -1127,7 +1334,8 @@ const RegisterPage = () => {
                 value={formData.subSpecialty}
                 onChange={handleNameChange}
                 placeholder="Sub-specialty"
-                className="w-full"
+                disabled={areProfessionalDetailsDisabled}
+                className={`w-full ${areProfessionalDetailsDisabled ? "bg-gray-50 text-gray-500 cursor-not-allowed" : ""}`}
               />
             </div>
           </div>
@@ -1204,66 +1412,77 @@ const RegisterPage = () => {
                 value={formData.licenseNumber}
                 onChange={handleNumericChange}
                 placeholder="License Number"
-                className="w-full"
+                disabled={areProfessionalDetailsDisabled}
+                className={`w-full ${areProfessionalDetailsDisabled ? "bg-gray-50 text-gray-500 cursor-not-allowed" : ""}`}
               />
             </div>
             <div></div>
           </div>
-          </div>
-
-          <div className="mt-4">
-            <h3 className="text-lg font-medium text-[#1E40AF] mb-1">Practice Information</h3>
-            
-            <div className="grid grid-cols-4 gap-3 mb-3">
-              <div>
+            <div className="grid grid-cols-3 gap-3 mb-3">
+              <div ref={clinicDropdownRef} className="relative">
                 <Label htmlFor="clinicName" className="block text-sm font-medium text-gray-700 mb-1">
                   Clinic/Practice Name<span className="text-red-500">*</span>
                 </Label>
-                <Input
-                  id="clinicName"
-                  type="text"
-                  name="clinicName"
-                  value={formData.clinicName}
-                  onChange={handleChange}
-                  onBlur={handleClinicNameBlur}
-                  placeholder="Clinic/Practice Name"
-                  className={`w-full ${errors.clinicName ? "border-red-500" : ""}`}
-                />
+                <div className="relative">
+                  <Input
+                    id="clinicName"
+                    type="text"
+                    name="clinicName"
+                    value={formData.clinicName}
+                    onChange={handleChange}
+                    onBlur={handleClinicNameBlur}
+                    onFocus={() => setIsClinicDropdownOpen(true)}
+                    placeholder="Search clinics or add a new one"
+                    disabled={Boolean(invitationDetails)}
+                    className={`w-full pr-9 ${errors.clinicName ? "border-red-500" : ""}`}
+                  />
+                  <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                </div>
+                {isClinicDropdownOpen && !invitationDetails && (
+                  <div className="absolute z-40 mt-2 w-full rounded-md border border-gray-200 bg-white shadow-lg">
+                    {isSearchingClinics ? (
+                      <div className="px-3 py-2 text-sm text-gray-500">Searching clinics...</div>
+                    ) : (
+                      <>
+                        {clinicOptions.map((clinic) => (
+                          <button
+                            key={clinic.id || clinic.clinicName}
+                            type="button"
+                            onMouseDown={() => handleClinicSelect(clinic.clinicName, true)}
+                            className="block w-full border-b border-gray-100 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                          >
+                            {clinic.clinicName}
+                          </button>
+                        ))}
+                        {formData.clinicName.trim() ? (
+                          <button
+                            type="button"
+                            onMouseDown={() => handleClinicSelect(formData.clinicName.trim(), false)}
+                            className="block w-full px-3 py-2 text-left text-sm font-medium text-blue-600 hover:bg-blue-50"
+                          >
+                            Use "{formData.clinicName.trim()}" as a new clinic
+                          </button>
+                        ) : null}
+                      </>
+                    )}
+                  </div>
+                )}
+                {!isSearchingClinics &&
+                normalizeClinicName(existingClinicMatch) === normalizeClinicName(formData.clinicName) &&
+                formData.clinicName.trim().length > 2 &&
+                !invitationDetails && (
+                  <div className="mt-2 rounded-md bg-blue-50 border border-blue-100 p-2 text-xs font-semibold text-blue-700 shadow-sm">
+                    This clinic already exists in the system.
+                  </div>
+                )}
+                {invitationDetails ? (
+                  <p className="mt-1 text-xs text-blue-600">
+                    This clinic was prefilled from your invitation.
+                  </p>
+                ) : null}
                 {errors.clinicName && <p className="mt-1 text-xs text-red-500">{errors.clinicName}</p>}
               </div>
-              <div className="relative">
-                <Label htmlFor="role" className="block text-sm font-medium text-gray-700 mb-1">
-                  Role<span className="text-red-500">*</span>
-                </Label>
-                <Select
-                  value={formData.role}
-                  onValueChange={(value) => {
-                    setFormData(prev => ({ ...prev, role: value }));
-                    setErrors(prev => ({ ...prev, role: "" }));
-                  }}
-                >
-                  <SelectTrigger
-                    className={`w-full ${errors.role ? "border-red-500" : ""}`}
-                  >
-                    <SelectValue
-                      placeholder={isLoadingRoles ? "Loading roles..." : "Role"}
-                    />
-                  </SelectTrigger>
-                  <SelectContent className="z-50 bg-white border border-gray-200 shadow-lg">
-                    {availableRoles.map((role) => (
-                      <SelectItem
-                        key={role.roleName}
-                        value={role.roleName}
-                        className="cursor-pointer hover:bg-gray-100"
-                      >
-                        {role.roleName}
-                        {role.type === "custom" ? " *" : ""}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {errors.role && <p className="mt-1 text-xs text-red-500">{errors.role}</p>}
-              </div>
+              
               <div className="col-span-2">
                 <Label htmlFor="practiceAddressStreet" className="block text-sm font-medium text-gray-700 mb-1">
                   {signupType === "clinic" ? (
