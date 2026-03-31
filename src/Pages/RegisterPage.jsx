@@ -91,6 +91,7 @@ const RegisterPage = () => {
   const [clinicOptions, setClinicOptions] = useState([]);
   const [isClinicDropdownOpen, setIsClinicDropdownOpen] = useState(false);
   const [isSearchingClinics, setIsSearchingClinics] = useState(false);
+  const [doesClinicExist, setDoesClinicExist] = useState(false);
   const [invitationDetails, setInvitationDetails] = useState(null);
 
   const [formData, setFormData] = useState(initialFormData);
@@ -236,7 +237,14 @@ const RegisterPage = () => {
       setIsSearchingClinics(true);
       try {
         const clinics = await searchClinics(formData.clinicName);
-        setClinicOptions(Array.isArray(clinics) ? clinics : []);
+        const results = Array.isArray(clinics) ? clinics : [];
+        setClinicOptions(results);
+        
+        // Exact match check to confirm existence
+        const exists = results.some(c => 
+          c.clinicName.toLowerCase() === formData.clinicName.trim().toLowerCase()
+        );
+        setDoesClinicExist(exists);
       } catch (error) {
         console.error("Clinic search failed:", error);
         setClinicOptions([]);
@@ -519,6 +527,7 @@ const RegisterPage = () => {
 
     if (name === "clinicName") {
       setIsClinicDropdownOpen(true);
+      setDoesClinicExist(false);
       const trimmedClinicName = value.trim();
       if (!trimmedClinicName) {
         loadedClinicNameRef.current = "";
@@ -553,6 +562,7 @@ const RegisterPage = () => {
     setErrors((prev) => ({ ...prev, clinicName: "" }));
     setClinicOptions([]);
     setIsClinicDropdownOpen(false);
+    setDoesClinicExist(true);
     void loadRolesForClinic(clinicName);
   };
 
@@ -1443,7 +1453,7 @@ const RegisterPage = () => {
                     )}
                   </div>
                 )}
-                {loadedClinicNameRef.current && loadedClinicNameRef.current.toLowerCase() === formData.clinicName.trim().toLowerCase() && !invitationDetails && (
+                {doesClinicExist && !invitationDetails && (
                   <div className="mt-2 rounded-md bg-blue-50 border border-blue-100 p-2 text-xs font-semibold text-blue-700 shadow-sm">
                     This clinic already exists in the system.
                   </div>
