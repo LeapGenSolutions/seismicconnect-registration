@@ -74,6 +74,7 @@ const DEFAULT_ROLE_OPTIONS = [
   { roleName: "Staff", type: "system", skipNpiValidation: true },
 ];
 const MAIN_APP_REDIRECT_BASE = (REDIRECT_URI || "").replace(/\/+$/, "");
+const normalizeClinicName = (value = "") => value.trim().toLowerCase().replace(/\s+/g, " ");
 
 const RegisterPage = () => {
   const { toast } = useToast();
@@ -91,7 +92,7 @@ const RegisterPage = () => {
   const [clinicOptions, setClinicOptions] = useState([]);
   const [isClinicDropdownOpen, setIsClinicDropdownOpen] = useState(false);
   const [isSearchingClinics, setIsSearchingClinics] = useState(false);
-  const [doesClinicExist, setDoesClinicExist] = useState(false);
+  const [existingClinicMatch, setExistingClinicMatch] = useState("");
   const [invitationDetails, setInvitationDetails] = useState(null);
 
   const [formData, setFormData] = useState(initialFormData);
@@ -220,39 +221,44 @@ const RegisterPage = () => {
   }, [invitationDetails, loadRolesForClinic]);
 
   useEffect(() => {
-    if (invitationDetails || !formData.clinicName.trim()) {
+    const trimmedClinicName = formData.clinicName.trim();
+    const normalizedClinicName = normalizeClinicName(trimmedClinicName);
+
+    if (invitationDetails || !trimmedClinicName) {
       setClinicOptions([]);
       setIsSearchingClinics(false);
+      setExistingClinicMatch("");
       return undefined;
     }
 
     const backendToken = sessionStorage.getItem("backendToken");
-    if (!backendToken || formData.clinicName.trim().length < 2) {
+    if (!backendToken || trimmedClinicName.length < 2) {
       setClinicOptions([]);
       setIsSearchingClinics(false);
+      setExistingClinicMatch("");
       return undefined;
     }
 
     let active = true;
+    setExistingClinicMatch("");
     const timeoutId = window.setTimeout(async () => {
       setIsSearchingClinics(true);
       try {
-        const clinics = await searchClinics(formData.clinicName);
+        const clinics = await searchClinics(trimmedClinicName);
         if (!active) return;
         
         const results = Array.isArray(clinics) ? clinics : [];
         setClinicOptions(results);
         
-        // Exact match check to confirm existence
-        const exists = results.some(c => 
-          c.clinicName && c.clinicName.toLowerCase().trim() === formData.clinicName.toLowerCase().trim()
+        const matchedClinic = results.find((clinic) =>
+          normalizeClinicName(clinic?.clinicName) === normalizedClinicName
         );
-        setDoesClinicExist(exists);
+        setExistingClinicMatch(matchedClinic?.clinicName || "");
       } catch (error) {
         if (!active) return;
         console.error("Clinic search failed:", error);
         setClinicOptions([]);
-        setDoesClinicExist(false);
+        setExistingClinicMatch("");
       } finally {
         if (active) setIsSearchingClinics(false);
       }
@@ -535,7 +541,7 @@ const RegisterPage = () => {
 
     if (name === "clinicName") {
       setIsClinicDropdownOpen(true);
-      setDoesClinicExist(false);
+      setExistingClinicMatch("");
       const trimmedClinicName = value.trim();
       if (!trimmedClinicName) {
         loadedClinicNameRef.current = "";
@@ -570,7 +576,7 @@ const RegisterPage = () => {
     setErrors((prev) => ({ ...prev, clinicName: "" }));
     setClinicOptions([]);
     setIsClinicDropdownOpen(false);
-    setDoesClinicExist(isExisting);
+    setExistingClinicMatch(isExisting ? clinicName : "");
     void loadRolesForClinic(clinicName);
   };
 
@@ -1461,7 +1467,10 @@ const RegisterPage = () => {
                     )}
                   </div>
                 )}
-                {!isSearchingClinics && doesClinicExist && formData.clinicName.trim().length > 2 && !invitationDetails && (
+                {!isSearchingClinics &&
+                normalizeClinicName(existingClinicMatch) === normalizeClinicName(formData.clinicName) &&
+                formData.clinicName.trim().length > 2 &&
+                !invitationDetails && (
                   <div className="mt-2 rounded-md bg-blue-50 border border-blue-100 p-2 text-xs font-semibold text-blue-700 shadow-sm">
                     This clinic already exists in the system.
                   </div>
