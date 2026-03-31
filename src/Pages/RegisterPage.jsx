@@ -233,27 +233,35 @@ const RegisterPage = () => {
       return undefined;
     }
 
+    let active = true;
     const timeoutId = window.setTimeout(async () => {
       setIsSearchingClinics(true);
       try {
         const clinics = await searchClinics(formData.clinicName);
+        if (!active) return;
+        
         const results = Array.isArray(clinics) ? clinics : [];
         setClinicOptions(results);
         
         // Exact match check to confirm existence
         const exists = results.some(c => 
-          c.clinicName.toLowerCase() === formData.clinicName.trim().toLowerCase()
+          c.clinicName && c.clinicName.toLowerCase().trim() === formData.clinicName.toLowerCase().trim()
         );
         setDoesClinicExist(exists);
       } catch (error) {
+        if (!active) return;
         console.error("Clinic search failed:", error);
         setClinicOptions([]);
+        setDoesClinicExist(false);
       } finally {
-        setIsSearchingClinics(false);
+        if (active) setIsSearchingClinics(false);
       }
     }, 300);
 
-    return () => window.clearTimeout(timeoutId);
+    return () => {
+      active = false;
+      window.clearTimeout(timeoutId);
+    };
   }, [formData.clinicName, invitationDetails]);
 
   useEffect(() => {
@@ -554,7 +562,7 @@ const RegisterPage = () => {
     }, 100);
   };
 
-  const handleClinicSelect = (clinicName) => {
+  const handleClinicSelect = (clinicName, isExisting = false) => {
     setFormData((prev) => ({
       ...prev,
       clinicName,
@@ -562,7 +570,7 @@ const RegisterPage = () => {
     setErrors((prev) => ({ ...prev, clinicName: "" }));
     setClinicOptions([]);
     setIsClinicDropdownOpen(false);
-    setDoesClinicExist(true);
+    setDoesClinicExist(isExisting);
     void loadRolesForClinic(clinicName);
   };
 
@@ -1434,7 +1442,7 @@ const RegisterPage = () => {
                           <button
                             key={clinic.id || clinic.clinicName}
                             type="button"
-                            onMouseDown={() => handleClinicSelect(clinic.clinicName)}
+                            onMouseDown={() => handleClinicSelect(clinic.clinicName, true)}
                             className="block w-full border-b border-gray-100 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
                           >
                             {clinic.clinicName}
@@ -1443,7 +1451,7 @@ const RegisterPage = () => {
                         {formData.clinicName.trim() ? (
                           <button
                             type="button"
-                            onMouseDown={() => handleClinicSelect(formData.clinicName.trim())}
+                            onMouseDown={() => handleClinicSelect(formData.clinicName.trim(), false)}
                             className="block w-full px-3 py-2 text-left text-sm font-medium text-blue-600 hover:bg-blue-50"
                           >
                             Use "{formData.clinicName.trim()}" as a new clinic
@@ -1453,7 +1461,7 @@ const RegisterPage = () => {
                     )}
                   </div>
                 )}
-                {doesClinicExist && !invitationDetails && (
+                {!isSearchingClinics && doesClinicExist && formData.clinicName.trim().length > 2 && !invitationDetails && (
                   <div className="mt-2 rounded-md bg-blue-50 border border-blue-100 p-2 text-xs font-semibold text-blue-700 shadow-sm">
                     This clinic already exists in the system.
                   </div>
