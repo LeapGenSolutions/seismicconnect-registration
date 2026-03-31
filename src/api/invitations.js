@@ -4,34 +4,62 @@ const BASE = (BACKEND_URL || "").replace(/\/+$/, "");
 const api = (path) => `${BASE}/${String(path).replace(/^\/+/, "")}`;
 
 function getAuthHeaders() {
-  const token = sessionStorage.getItem("backendToken");
+  if (typeof window === "undefined") {
+    return {};
+  }
+
+  const token = window.sessionStorage.getItem("backendToken");
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-async function parseResponse(response, fallbackMessage) {
-  let data = null;
+async function parseJson(response) {
   try {
-    data = await response.json();
+    return await response.json();
   } catch {
-    data = null;
+    return null;
   }
+}
 
-  if (!response.ok) {
-    throw new Error(data?.message || data?.error || fallbackMessage);
-  }
+const INVITATION_PATHS = [
+  (token) => `/api/invitations/token/${encodeURIComponent(token)}`,
+  (token) => `/api/invitations/${encodeURIComponent(token)}`,
+  (token) => `/api/invitations/details/${encodeURIComponent(token)}`,
+  (token) => `/api/standalone/invitations/${encodeURIComponent(token)}`,
+  (token) => `/api/standalone/invitations/details/${encodeURIComponent(token)}`,
+];
 
-  return data;
+function readInvitation(payload) {
+  return payload?.invitation || payload?.data || payload;
 }
 
 export async function fetchInvitationDetails(invitationToken) {
-  const response = await fetch(
-    api(`/api/invitations/token/${encodeURIComponent(invitationToken)}`),
-    {
-      headers: {
-        ...getAuthHeaders(),
-      },
-    }
-  );
+  const trimmedToken = String(invitationToken || "").trim();
+  if (!trimmedToken) {
+    throw new Error("Invitation token is required");
+  }
 
-  return parseResponse(response, "Failed to load invitation details");
+  const headers = {
+    "Content-Type": "application/json",
+    ...getAuthHeaders(),
+  };
+
+  let lastError = null;
+
+  for (const makePath of INVITATION_PATHS) {
+    const response = await fetch(api(makePath(trimmedToken)), { headers });
+    const payload = await parseJson(response);
+
+    if (response.ok) {
+      return readInvitation(payload);
+    }
+
+    if (response.status !== 404) {
+      lastError = new Error(
+        payload?.message || payload?.error || "Failed to load invitation details"
+      );
+      break;
+    }
+  }
+
+  throw lastError || new Error("Failed to load invitation details");
 }
