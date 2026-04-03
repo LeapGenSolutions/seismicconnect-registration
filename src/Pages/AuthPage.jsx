@@ -56,13 +56,18 @@ const AuthPage = () => {
     // Store auth type for route guards (Feature 1.3)
     sessionStorage.setItem("authType", "ciam");
     sessionStorage.setItem("authIntent", "standalone");
+
+    const invitationToken = new URLSearchParams(window.location.search).get("invitation");
+    const redirectUri = invitationToken
+      ? `${CIAM_REDIRECT_URI}?invitation=${encodeURIComponent(invitationToken)}`
+      : CIAM_REDIRECT_URI;
     
     // CIAM Authentication URL - redirect to register page after password creation flow
     // We only need an id_token (no access_token)
     const params = new URLSearchParams({
       client_id: CIAM_CLIENT_ID,
       response_type: "id_token",
-      redirect_uri: CIAM_REDIRECT_URI, // Redirect to register page after account creation
+      redirect_uri: redirectUri, // Redirect to register page after account creation
       scope: "openid profile email",
       nonce: Math.random().toString(36).substring(7),
       prompt: "login"
