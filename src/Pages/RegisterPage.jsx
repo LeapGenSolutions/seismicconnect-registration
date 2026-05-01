@@ -46,6 +46,7 @@ const initialFormData = {
     state: "",
     zip: "",
   },
+  transcriptPurging: "",
 };
 
 // Initial errors structure
@@ -66,6 +67,7 @@ const initialErrors = {
     zip: "",
   },
   terms: "",
+  transcriptPurging: "",
 };
 
 const DEFAULT_ROLE_OPTIONS = [
@@ -74,6 +76,8 @@ const DEFAULT_ROLE_OPTIONS = [
   { roleName: "Staff", type: "system", skipNpiValidation: true },
 ];
 const MAIN_APP_REDIRECT_BASE = (REDIRECT_URI || "").replace(/\/+$/, "");
+const BACKEND_BASE = (BACKEND_URL || "").replace(/\/+$/, "");
+const backendApi = (path) => `${BACKEND_BASE}/${String(path).replace(/^\/+/, "")}`;
 const normalizeClinicName = (value = "") => value.trim().toLowerCase().replace(/\s+/g, " ");
 
 const RegisterPage = () => {
@@ -343,7 +347,7 @@ const RegisterPage = () => {
       // Verify email/token when token comes from CIAM redirect (not from refresh)
       if (tokenFromUrl) {
         // Verify token and user (email verification)
-        fetch(`${BACKEND_URL}api/standalone/auth/verify`, {
+        fetch(backendApi("api/standalone/auth/verify"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -602,7 +606,7 @@ const RegisterPage = () => {
     setErrors(prev => ({ ...prev, npiNumber: "" }));
 
     try {
-      const response = await fetch(`${BACKEND_URL}api/verify-npi`, {
+      const response = await fetch(backendApi("api/verify-npi"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -871,6 +875,11 @@ const RegisterPage = () => {
       hasError = true;
     }
 
+    if (!formData.transcriptPurging) {
+      newErrors.transcriptPurging = "Please select a transcription purging timeline";
+      hasError = true;
+    }
+
     // Clinic/Practice name is always mandatory
     if (!formData.clinicName) {
       newErrors.clinicName = "Clinic/Practice name is required";
@@ -984,6 +993,12 @@ const RegisterPage = () => {
         clinicalResponsibilityAccepted: agreeToTerms,
         signupType: signupType,
         invitationToken: invitationToken || undefined,
+        transcript_purging: [
+          {
+            enabled: formData.transcriptPurging === "never" ? "no" : "yes",
+            time_line: formData.transcriptPurging === "never" ? "" : formData.transcriptPurging
+          }
+        ],
       };
 
       Object.keys(payload).forEach(key => {
@@ -993,7 +1008,7 @@ const RegisterPage = () => {
       });
 
       // Call /api/standalone/register with registration data
-      const response = await fetch(`${BACKEND_URL}api/standalone/register`, {
+      const response = await fetch(backendApi("api/standalone/register"), {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
@@ -1416,7 +1431,29 @@ const RegisterPage = () => {
                 className={`w-full ${areProfessionalDetailsDisabled ? "bg-gray-50 text-gray-500 cursor-not-allowed" : ""}`}
               />
             </div>
-            <div></div>
+            
+            <div className="relative">
+              <Label htmlFor="transcriptPurging" className="block text-sm font-medium text-gray-700 mb-1">
+                Transcript Purging<span className="text-red-500">*</span>
+              </Label>
+              <Select
+                value={formData.transcriptPurging}
+                onValueChange={(value) => {
+                  setFormData(prev => ({ ...prev, transcriptPurging: value }));
+                  setErrors(prev => ({ ...prev, transcriptPurging: "" }));
+                }}
+              >
+                <SelectTrigger className={`w-full bg-white ${errors.transcriptPurging ? "border-red-500" : ""}`}>
+                  <SelectValue placeholder="Select timeframe" />
+                </SelectTrigger>
+                <SelectContent className="z-50 bg-white border border-gray-200 shadow-lg">
+                  <SelectItem value="1" className="cursor-pointer hover:bg-gray-100">1 day</SelectItem>
+                  <SelectItem value="7" className="cursor-pointer hover:bg-gray-100">7 days</SelectItem>
+                  <SelectItem value="30" className="cursor-pointer hover:bg-gray-100">30 days</SelectItem>
+                </SelectContent>
+              </Select>
+              {errors.transcriptPurging && <p className="mt-1 text-xs text-red-500">{errors.transcriptPurging}</p>}
+            </div>
           </div>
             <div className="grid grid-cols-3 gap-3 mb-3">
               <div ref={clinicDropdownRef} className="relative">
