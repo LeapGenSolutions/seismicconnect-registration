@@ -12,7 +12,9 @@ import { fetchInvitationDetails } from "../api/invitations";
 import { US_STATES } from "../components/ui/us-states";
 import { useToast } from "../hooks/use-toast";
 import TermsDialog from "../components/TermsDialog";
-import { Loader2, Search } from "lucide-react";
+import { CheckCircle2, Loader2, Search, ShieldCheck } from "lucide-react";
+import BaaAgreementModal from "../components/baa/BaaAgreementModal";
+import { BAA_AGREEMENT_TITLE, CURRENT_BAA_VERSION } from "../constants/baaAgreement";
 // Helper to safely decode a JWT without validating it (backend must still verify)
 const decodeIdToken = (token) => {
   try {
@@ -67,6 +69,7 @@ const initialErrors = {
     zip: "",
   },
   terms: "",
+  baaSignature: "",
   transcriptPurging: "",
 };
 
@@ -85,6 +88,7 @@ const RegisterPage = () => {
   // Start with loader visible until CIAM verification / initial checks complete
   const [isLoading, setIsLoading] = useState(true);
   const [agreeToTerms, setAgreeToTerms] = useState(false);
+  const [baaSignature, setBaaSignature] = useState(null);
   // eslint-disable-next-line no-unused-vars
   const [signupType, setSignupType] = useState("standalone"); // "standalone" or "clinic" - setSignupType will be used when registration type selection is re-enabled
   const [isNpiVerified, setIsNpiVerified] = useState(false);
@@ -141,6 +145,36 @@ const RegisterPage = () => {
   const shouldRequireSpecialty = !isStaffRole;
   const specialtyValue = formData.specialty.trim()
     || (!shouldRequireSpecialty ? formData.role.trim() : undefined);
+  const baaUserDraft = useMemo(
+    () => ({
+      fullName: [formData.firstName, formData.lastName].filter(Boolean).join(" "),
+      name: [formData.firstName, formData.lastName].filter(Boolean).join(" "),
+      email: formData.primaryEmail,
+      role: formData.role,
+      clinicName: formData.clinicName,
+    }),
+    [formData.clinicName, formData.firstName, formData.lastName, formData.primaryEmail, formData.role]
+  );
+
+  const handleBaaAccepted = async ({ signerName, manualSignature, agreementTitle, agreementText }) => {
+    setBaaSignature({
+      signed: true,
+      signerName,
+      manualSignature,
+      agreementTitle,
+      agreementText,
+      signedAt: new Date().toISOString(),
+      baaVersion: CURRENT_BAA_VERSION,
+    });
+    setErrors((prev) => ({ ...prev, baaSignature: "" }));
+  };
+
+  useEffect(() => {
+    if (baaSignature?.signed) {
+      setBaaSignature(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [baaUserDraft.fullName, baaUserDraft.email]);
 
   useEffect(() => {
     currentRoleRef.current = formData.role;
@@ -250,10 +284,10 @@ const RegisterPage = () => {
       try {
         const clinics = await searchClinics(trimmedClinicName);
         if (!active) return;
-        
+
         const results = Array.isArray(clinics) ? clinics : [];
         setClinicOptions(results);
-        
+
         const matchedClinic = results.find((clinic) =>
           normalizeClinicName(clinic?.clinicName) === normalizedClinicName
         );
@@ -343,7 +377,7 @@ const RegisterPage = () => {
 
       // Check if token came from URL (not from sessionStorage on refresh)
       const tokenFromUrl = params.get("id_token");
-      
+
       // Verify email/token when token comes from CIAM redirect (not from refresh)
       if (tokenFromUrl) {
         // Verify token and user (email verification)
@@ -390,7 +424,7 @@ const RegisterPage = () => {
                   window.location.pathname + window.location.search
                 );
               }
-            //  navigate("/");
+              //  navigate("/");
               // Force absolute redirect - use assign for proper navigation
               redirectToMainApp();
             } else {
@@ -477,7 +511,7 @@ const RegisterPage = () => {
       isInitialMount.current = false;
       return;
     }
-    
+
     // Clear all fields except email
     setFormData((prev) => ({
       ...initialFormData,
@@ -486,10 +520,11 @@ const RegisterPage = () => {
 
     // Clear all errors
     setErrors(initialErrors);
-    
+
     // Reset terms checkbox
     setAgreeToTerms(false);
-    
+    setBaaSignature(null);
+
     // Reset NPI verification status
     setIsNpiVerified(false);
     setIsVerifyingNpi(false);
@@ -634,7 +669,7 @@ const RegisterPage = () => {
         if (currentSkipNpiValidationRef.current) {
           return;
         }
-        
+
         if (data.valid === true) {
           setIsNpiVerified(true);
           setErrors(prev => ({ ...prev, npiNumber: "" }));
@@ -662,8 +697,8 @@ const RegisterPage = () => {
 
       console.error("NPI verification error:", error);
       const errorMessage = error.message || "Failed to verify NPI. Please try again.";
-      setErrors(prev => ({ 
-        ...prev, 
+      setErrors(prev => ({
+        ...prev,
         npiNumber: errorMessage
       }));
       setIsNpiVerified(false);
@@ -681,11 +716,11 @@ const RegisterPage = () => {
   const handleNumericChange = async (e) => {
     const { name, value } = e.target;
     const numericValue = value.replace(/\D/g, '');
-    
+
     if (name === "npiNumber" && numericValue !== formData.npiNumber) {
       setIsNpiVerified(false);
     }
-    
+
     setFormData(prev => ({ ...prev, [name]: numericValue }));
     setErrors(prev => ({ ...prev, [name]: "" }));
 
@@ -794,7 +829,7 @@ const RegisterPage = () => {
     setFormData(prev => {
       const currentStates = prev.statesOfLicense || [];
       const isSelected = currentStates.includes(state);
-      
+
       return {
         ...prev,
         statesOfLicense: isSelected
@@ -802,7 +837,7 @@ const RegisterPage = () => {
           : [...currentStates, state]
       };
     });
-    
+
     // Clear error when a state is selected
     setErrors(prev => ({ ...prev, statesOfLicense: "" }));
   };
@@ -810,10 +845,10 @@ const RegisterPage = () => {
   // Handle form submission
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     // Reset errors
     const newErrors = { ...initialErrors };
-    
+
     let hasError = false;
 
     // Validate mandatory fields
@@ -891,7 +926,7 @@ const RegisterPage = () => {
       newErrors.practiceAddress.state = "State is required";
       hasError = true;
     }
-    
+
     // Validate additional clinic fields for clinic signup type
     if (signupType === "clinic") {
       if (!formData.practiceAddress.street) {
@@ -930,9 +965,14 @@ const RegisterPage = () => {
       hasError = true;
     }
 
+    if (!baaSignature?.signed) {
+      newErrors.baaSignature = "You must review and sign the BAA before registering";
+      hasError = true;
+    }
+
     // Set all errors to display validation messages
     setErrors(newErrors);
-    
+
     // If there are validation errors, stop form submission
     if (hasError) {
       // Scroll to first error field for better UX
@@ -946,10 +986,10 @@ const RegisterPage = () => {
     }
 
     setIsLoading(true);
-    
+
     try {
       const backendToken = sessionStorage.getItem("backendToken");
-      
+
       if (!backendToken) {
         const errorMsg = "Authentication token not found. Please log in again.";
         setErrors((prev) => ({
@@ -966,11 +1006,11 @@ const RegisterPage = () => {
       }
 
       let practiceAddressData = null;
-      if (signupType === "clinic" || 
-          formData.practiceAddress.street || 
-          formData.practiceAddress.city || 
-          formData.practiceAddress.state || 
-          formData.practiceAddress.zip) {
+      if (signupType === "clinic" ||
+        formData.practiceAddress.street ||
+        formData.practiceAddress.city ||
+        formData.practiceAddress.state ||
+        formData.practiceAddress.zip) {
         practiceAddressData = formData.practiceAddress;
       }
 
@@ -991,6 +1031,13 @@ const RegisterPage = () => {
         termsAccepted: agreeToTerms,
         privacyAccepted: agreeToTerms,
         clinicalResponsibilityAccepted: agreeToTerms,
+        baaAccepted: Boolean(baaSignature?.signed),
+        baaVersion: baaSignature?.baaVersion,
+        baaSignedAt: baaSignature?.signedAt,
+        baaSignerName: baaSignature?.signerName,
+        baaManualSignature: baaSignature?.manualSignature || undefined,
+        baaAgreementTitle: baaSignature?.agreementTitle || BAA_AGREEMENT_TITLE,
+        baaSignature,
         signupType: signupType,
         invitationToken: invitationToken || undefined,
         transcript_purging: [
@@ -1010,7 +1057,7 @@ const RegisterPage = () => {
       // Call /api/standalone/register with registration data
       const response = await fetch(backendApi("api/standalone/register"), {
         method: "POST",
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${backendToken}`
         },
@@ -1030,11 +1077,11 @@ const RegisterPage = () => {
       }
 
       const registeredUser = await response.json();
-      
+
 
       // Mark registration as complete
       sessionStorage.setItem("standaloneRegistrationComplete", "true");
-      
+
       // Show success message
       toast({
         title: "Registration Successful!",
@@ -1044,7 +1091,7 @@ const RegisterPage = () => {
             : "Please contact your clinic admin to approve your request.",
         variant: "default",
       });
-      
+
       // Remove hash from URL before navigating
       if (window.history && window.history.replaceState) {
         window.history.replaceState(
@@ -1053,12 +1100,12 @@ const RegisterPage = () => {
           window.location.pathname + window.location.search
         );
       }
-      
+
       // Hand off to the main app for both approved and pending users.
       setTimeout(() => {
-         redirectToMainApp();
+        redirectToMainApp();
       }, 1500);
-      
+
     } catch (error) {
       const errorMsg = error.message || "Registration failed. Please try again or contact support if the issue persists.";
       setErrors((prev) => ({
@@ -1085,21 +1132,21 @@ const RegisterPage = () => {
       )}
 
       {!isLoading && (
-      <div className="relative max-w-5xl w-full bg-white/95 px-8 py-6 rounded-2xl shadow-lg backdrop-blur-md flex flex-col items-center animate-fadeIn z-10">
-        <div className="flex justify-center mb-3">
-          <div className="w-14 h-14 flex items-center justify-center">
-            <Logo size="large" />
+        <div className="relative max-w-5xl w-full bg-white/95 px-8 py-6 rounded-2xl shadow-lg backdrop-blur-md flex flex-col items-center animate-fadeIn z-10">
+          <div className="flex justify-center mb-3">
+            <div className="w-14 h-14 flex items-center justify-center">
+              <Logo size="large" />
+            </div>
           </div>
-        </div>
 
-        <h2 className="text-2xl font-extrabold text-[#1E3A8A] mb-1 text-center">
-          Register your SEISMIC account
-        </h2>
-        <p className="mb-4 text-gray-600 text-sm text-center">
-          Join our healthcare platform
-        </p>
+          <h2 className="text-2xl font-extrabold text-[#1E3A8A] mb-1 text-center">
+            Register your SEISMIC account
+          </h2>
+          <p className="mb-4 text-gray-600 text-sm text-center">
+            Join our healthcare platform
+          </p>
 
-        {/*
+          {/*
         <div className="flex justify-center mb-4">
           <div className="flex gap-2 bg-gray-100 p-1 rounded-full">
             <label className="cursor-pointer flex-1 min-w-[180px]">
@@ -1162,510 +1209,544 @@ const RegisterPage = () => {
           </div>
         </div>
         */}
-        <form onSubmit={handleSubmit} className="w-full space-y-3" autoComplete="off">
-          <div className="">
-            <h3 className="text-lg font-medium text-[#1E40AF] mb-1">Personal Information</h3>
-            <div className="grid grid-cols-3 gap-3 mb-3">
-            <div>
-              <Label htmlFor="firstName" className="block text-sm font-medium text-gray-700 mb-1">
-                First Name<span className="text-red-500">*</span>
-              </Label>
-              <Input
-                id="firstName"
-                type="text"
-                name="firstName"
-                value={formData.firstName}
-                onChange={handleNameChange}
-                onBlur={handleFirstNameBlur}
-                placeholder="First Name"
-                className={`w-full ${errors.firstName ? "border-red-500" : ""}`}
-              />
-              {errors.firstName && <p className="mt-1 text-xs text-red-500">{errors.firstName}</p>}
-            </div>
-
-            <div>
-              <Label htmlFor="middleName" className="block text-sm font-medium text-gray-700 mb-1">
-                Middle Name
-              </Label>
-              <Input
-                id="middleName"
-                type="text"
-                name="middleName"
-                value={formData.middleName}
-                onChange={handleNameChange}
-                placeholder="Middle Name"
-                className="w-full"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="lastName" className="block text-sm font-medium text-gray-700 mb-1">
-                Last Name<span className="text-red-500">*</span>
-              </Label>
-              <Input
-                id="lastName"
-                type="text"
-                name="lastName"
-                value={formData.lastName}
-                onChange={handleNameChange}
-                onBlur={handleLastNameBlur}
-                placeholder="Last Name"
-                className={`w-full ${errors.lastName ? "border-red-500" : ""}`}
-              />
-              {errors.lastName && <p className="mt-1 text-xs text-red-500">{errors.lastName}</p>}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-3 gap-3 mb-3">
-            <div>
-              <Label htmlFor="primaryEmail" className="block text-sm font-medium text-gray-700 mb-1">
-                Primary Email<span className="text-red-500">*</span>
-              </Label>
-              <Input
-                id="primaryEmail"
-                type="email"
-                name="primaryEmail"
-                value={formData.primaryEmail}
-                readOnly
-                disabled
-                placeholder="Primary Email"
-                className={`w-full bg-gray-50 ${errors.primaryEmail ? "border-red-500" : ""}`}
-              />
-              {errors.primaryEmail && <p className="mt-1 text-xs text-red-500">{errors.primaryEmail}</p>}
-            </div>
-
-            <div>
-              <Label htmlFor="secondaryEmail" className="block text-sm font-medium text-gray-700 mb-1">
-                Secondary Email
-              </Label>
-              <Input
-                id="secondaryEmail"
-                type="email"
-                name="secondaryEmail"
-                value={formData.secondaryEmail}
-                onChange={handleChange}
-                onBlur={handleSecondaryEmailBlur}
-                placeholder="Secondary Email"
-                className={`w-full ${errors.secondaryEmail ? "border-red-500" : ""}`}
-              />
-              {errors.secondaryEmail && <p className="mt-1 text-xs text-red-500">{errors.secondaryEmail}</p>}
-            </div>
-
-            <div className="relative">
-                <Label htmlFor="role" className="block text-sm font-medium text-gray-700 mb-1">
-                  Role<span className="text-red-500">*</span>
-                </Label>
-                <Select
-                  value={formData.role}
-                  onValueChange={(value) => {
-                    setFormData(prev => ({ ...prev, role: value }));
-                    setErrors(prev => ({ ...prev, role: "" }));
-                  }}
-                  disabled={Boolean(invitationDetails)}
-                >
-                  <SelectTrigger
-                    className={`w-full ${errors.role ? "border-red-500" : ""}`}
-                  >
-                    <SelectValue
-                      placeholder={isLoadingRoles ? "Loading roles..." : "Role"}
-                    />
-                  </SelectTrigger>
-                  <SelectContent className="z-50 bg-white border border-gray-200 shadow-lg">
-                    {roleOptions.map((role) => (
-                      <SelectItem
-                        key={role.roleName}
-                        value={role.roleName}
-                        className="cursor-pointer hover:bg-gray-100"
-                      >
-                        {role.roleName}
-                        {role.type === "custom" ? " *" : ""}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {invitationDetails ? (
-                  <p className="mt-1 text-xs text-blue-600">
-                    This role was prefilled from your invitation.
-                  </p>
-                ) : null}
-                {errors.role && <p className="mt-1 text-xs text-red-500">{errors.role}</p>}
-              </div>
-          </div>
-          </div>
-
-          <div className="mt-4">
-            <h3 className="text-lg font-medium text-[#1E40AF] mb-1">Practice Information</h3>
-            
-            <div className="grid grid-cols-3 gap-3 mb-3">
-            <div>
-              <Label htmlFor="npiNumber" className="block text-sm font-medium text-gray-700 mb-1">
-                NPI Number{shouldValidateNpi && <span className="text-red-500">*</span>}
-              </Label>
-              <Input
-                id="npiNumber"
-                type="text"
-                name="npiNumber"
-                value={formData.npiNumber}
-                onChange={handleNumericChange}
-                onBlur={handleNPIBlur}
-                placeholder={isStaffRole ? "NPI Number" : "NPI Number"}
-                maxLength={10}
-                inputMode="numeric"
-                disabled={isVerifyingNpi || isStaffRole}
-                className={`w-full ${isStaffRole ? "bg-gray-50 text-gray-500 cursor-not-allowed" : ""} ${errors.npiNumber ? "border-red-500" : isNpiVerified ? "border-green-500" : ""}`}
-              />
-              {isVerifyingNpi && <p className="mt-1 text-xs text-blue-500">Verifying NPI...</p>}
-              {!isVerifyingNpi && errors.npiNumber && <p className="mt-1 text-xs text-red-500">{errors.npiNumber}</p>}
-              {!isVerifyingNpi && !errors.npiNumber && isNpiVerified && formData.npiNumber && (
-                <p className="mt-1 text-xs text-green-600">NPI verified successfully</p>
-              )}
-            </div>
-
-            <div>
-              <Label htmlFor="specialty" className="block text-sm font-medium text-gray-700 mb-1">
-                Specialty{shouldRequireSpecialty && <span className="text-red-500">*</span>}
-              </Label>
-              <Input
-                id="specialty"
-                type="text"
-                name="specialty"
-                value={formData.specialty}
-                onChange={handleNameChange}
-                placeholder="Specialty"
-                disabled={areProfessionalDetailsDisabled}
-                className={`w-full ${areProfessionalDetailsDisabled ? "bg-gray-50 text-gray-500 cursor-not-allowed" : ""} ${errors.specialty ? "border-red-500" : ""}`}
-              />
-              {errors.specialty && <p className="mt-1 text-xs text-red-500">{errors.specialty}</p>}
-            </div>
-
-            <div>
-              <Label htmlFor="subSpecialty" className="block text-sm font-medium text-gray-700 mb-1">
-                Sub-specialty
-              </Label>
-              <Input
-                id="subSpecialty"
-                type="text"
-                name="subSpecialty"
-                value={formData.subSpecialty}
-                onChange={handleNameChange}
-                placeholder="Sub-specialty"
-                disabled={areProfessionalDetailsDisabled}
-                className={`w-full ${areProfessionalDetailsDisabled ? "bg-gray-50 text-gray-500 cursor-not-allowed" : ""}`}
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-3 gap-3 mb-3">
-            <div className="relative states-dropdown-container">
-              <Label htmlFor="statesOfLicense" className="block text-sm font-medium text-gray-700 mb-1">
-                State(s) of License<span className="text-red-500">*</span>
-              </Label>
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setIsStatesDropdownOpen(!isStatesDropdownOpen)}
-                  className={`w-full flex items-center justify-between px-3 py-2 text-sm border rounded-md bg-white ${errors.statesOfLicense ? "border-red-500" : "border-gray-300"} hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500`}
-                >
-                  <span className={formData.statesOfLicense.length > 0 ? "text-gray-900" : "text-gray-400"}>
-                    {formData.statesOfLicense.length > 0 
-                      ? `${formData.statesOfLicense.length} state${formData.statesOfLicense.length > 1 ? 's' : ''} selected`
-                      : "Select states"}
-                  </span>
-                  <svg className="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </button>
-                
-                {isStatesDropdownOpen && (
-                  <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
-                    {US_STATES.map(state => (
-                      <label
-                        key={state}
-                        className="flex items-center px-3 py-2 hover:bg-gray-100 cursor-pointer"
-                      >
-                        <Checkbox
-                          checked={formData.statesOfLicense.includes(state)}
-                          onCheckedChange={() => handleStateToggle(state)}
-                          className="w-4 h-4 border-2 border-gray-300 rounded bg-white data-[state=checked]:bg-[#1E40AF] data-[state=checked]:border-[#1E40AF] data-[state=checked]:text-white"
-                        />
-                        <span className="ml-2 text-sm text-gray-700">{state}</span>
-                      </label>
-                    ))}
-                  </div>
-                )}
-              </div>
-              {formData.statesOfLicense.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-1">
-                  {formData.statesOfLicense.map(state => (
-                    <span
-                      key={state}
-                      className="inline-flex items-center px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded"
-                    >
-                      {state}
-                      <button
-                        type="button"
-                        onClick={() => handleStateToggle(state)}
-                        className="ml-1 hover:text-blue-900"
-                      >
-                        ×
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              )}
-              {errors.statesOfLicense && <p className="mt-1 text-xs text-red-500">{errors.statesOfLicense}</p>}
-            </div>
-
-            <div>
-              <Label htmlFor="licenseNumber" className="block text-sm font-medium text-gray-700 mb-1">
-                License Number
-              </Label>
-              <Input
-                id="licenseNumber"
-                type="text"
-                name="licenseNumber"
-                value={formData.licenseNumber}
-                onChange={handleNumericChange}
-                placeholder="License Number"
-                disabled={areProfessionalDetailsDisabled}
-                className={`w-full ${areProfessionalDetailsDisabled ? "bg-gray-50 text-gray-500 cursor-not-allowed" : ""}`}
-              />
-            </div>
-            
-            <div className="relative">
-              <Label htmlFor="transcriptPurging" className="block text-sm font-medium text-gray-700 mb-1">
-                Transcript Purging<span className="text-red-500">*</span>
-              </Label>
-              <Select
-                value={formData.transcriptPurging}
-                onValueChange={(value) => {
-                  setFormData(prev => ({ ...prev, transcriptPurging: value }));
-                  setErrors(prev => ({ ...prev, transcriptPurging: "" }));
-                }}
-              >
-                <SelectTrigger className={`w-full bg-white ${errors.transcriptPurging ? "border-red-500" : ""}`}>
-                  <SelectValue placeholder="Select timeframe" />
-                </SelectTrigger>
-                <SelectContent className="z-50 bg-white border border-gray-200 shadow-lg">
-                  <SelectItem value="1" className="cursor-pointer hover:bg-gray-100">1 day</SelectItem>
-                  <SelectItem value="7" className="cursor-pointer hover:bg-gray-100">7 days</SelectItem>
-                  <SelectItem value="30" className="cursor-pointer hover:bg-gray-100">30 days</SelectItem>
-                </SelectContent>
-              </Select>
-              {errors.transcriptPurging && <p className="mt-1 text-xs text-red-500">{errors.transcriptPurging}</p>}
-            </div>
-          </div>
-            <div className="grid grid-cols-3 gap-3 mb-3">
-              <div ref={clinicDropdownRef} className="relative">
-                <Label htmlFor="clinicName" className="block text-sm font-medium text-gray-700 mb-1">
-                  Clinic/Practice Name<span className="text-red-500">*</span>
-                </Label>
-                <div className="relative">
+          <form onSubmit={handleSubmit} className="w-full space-y-3" autoComplete="off">
+            <div className="">
+              <h3 className="text-lg font-medium text-[#1E40AF] mb-1">Personal Information</h3>
+              <div className="grid grid-cols-3 gap-3 mb-3">
+                <div>
+                  <Label htmlFor="firstName" className="block text-sm font-medium text-gray-700 mb-1">
+                    First Name<span className="text-red-500">*</span>
+                  </Label>
                   <Input
-                    id="clinicName"
+                    id="firstName"
                     type="text"
-                    name="clinicName"
-                    value={formData.clinicName}
-                    onChange={handleChange}
-                    onBlur={handleClinicNameBlur}
-                    onFocus={() => setIsClinicDropdownOpen(true)}
-                    placeholder="Search clinics or add a new one"
-                    disabled={Boolean(invitationDetails)}
-                    className={`w-full pr-9 ${errors.clinicName ? "border-red-500" : ""}`}
+                    name="firstName"
+                    value={formData.firstName}
+                    onChange={handleNameChange}
+                    onBlur={handleFirstNameBlur}
+                    placeholder="First Name"
+                    className={`w-full ${errors.firstName ? "border-red-500" : ""}`}
                   />
-                  <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                  {errors.firstName && <p className="mt-1 text-xs text-red-500">{errors.firstName}</p>}
                 </div>
-                {isClinicDropdownOpen && !invitationDetails && (
-                  <div className="absolute z-40 mt-2 w-full rounded-md border border-gray-200 bg-white shadow-lg">
-                    {isSearchingClinics ? (
-                      <div className="px-3 py-2 text-sm text-gray-500">Searching clinics...</div>
-                    ) : (
-                      <>
-                        {clinicOptions.map((clinic) => (
-                          <button
-                            key={clinic.id || clinic.clinicName}
-                            type="button"
-                            onMouseDown={() => handleClinicSelect(clinic.clinicName, true)}
-                            className="block w-full border-b border-gray-100 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+
+                <div>
+                  <Label htmlFor="middleName" className="block text-sm font-medium text-gray-700 mb-1">
+                    Middle Name
+                  </Label>
+                  <Input
+                    id="middleName"
+                    type="text"
+                    name="middleName"
+                    value={formData.middleName}
+                    onChange={handleNameChange}
+                    placeholder="Middle Name"
+                    className="w-full"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="lastName" className="block text-sm font-medium text-gray-700 mb-1">
+                    Last Name<span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    id="lastName"
+                    type="text"
+                    name="lastName"
+                    value={formData.lastName}
+                    onChange={handleNameChange}
+                    onBlur={handleLastNameBlur}
+                    placeholder="Last Name"
+                    className={`w-full ${errors.lastName ? "border-red-500" : ""}`}
+                  />
+                  {errors.lastName && <p className="mt-1 text-xs text-red-500">{errors.lastName}</p>}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3 mb-3">
+                <div>
+                  <Label htmlFor="primaryEmail" className="block text-sm font-medium text-gray-700 mb-1">
+                    Primary Email<span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    id="primaryEmail"
+                    type="email"
+                    name="primaryEmail"
+                    value={formData.primaryEmail}
+                    readOnly
+                    disabled
+                    placeholder="Primary Email"
+                    className={`w-full bg-gray-50 ${errors.primaryEmail ? "border-red-500" : ""}`}
+                  />
+                  {errors.primaryEmail && <p className="mt-1 text-xs text-red-500">{errors.primaryEmail}</p>}
+                </div>
+
+                <div>
+                  <Label htmlFor="secondaryEmail" className="block text-sm font-medium text-gray-700 mb-1">
+                    Secondary Email
+                  </Label>
+                  <Input
+                    id="secondaryEmail"
+                    type="email"
+                    name="secondaryEmail"
+                    value={formData.secondaryEmail}
+                    onChange={handleChange}
+                    onBlur={handleSecondaryEmailBlur}
+                    placeholder="Secondary Email"
+                    className={`w-full ${errors.secondaryEmail ? "border-red-500" : ""}`}
+                  />
+                  {errors.secondaryEmail && <p className="mt-1 text-xs text-red-500">{errors.secondaryEmail}</p>}
+                </div>
+
+                <div className="relative">
+                  <Label htmlFor="role" className="block text-sm font-medium text-gray-700 mb-1">
+                    Role<span className="text-red-500">*</span>
+                  </Label>
+                  <Select
+                    value={formData.role}
+                    onValueChange={(value) => {
+                      setFormData(prev => ({ ...prev, role: value }));
+                      setErrors(prev => ({ ...prev, role: "" }));
+                    }}
+                    disabled={Boolean(invitationDetails)}
+                  >
+                    <SelectTrigger
+                      className={`w-full ${errors.role ? "border-red-500" : ""}`}
+                    >
+                      <SelectValue
+                        placeholder={isLoadingRoles ? "Loading roles..." : "Role"}
+                      />
+                    </SelectTrigger>
+                    <SelectContent className="z-50 bg-white border border-gray-200 shadow-lg">
+                      {roleOptions.map((role) => (
+                        <SelectItem
+                          key={role.roleName}
+                          value={role.roleName}
+                          className="cursor-pointer hover:bg-gray-100"
+                        >
+                          {role.roleName}
+                          {role.type === "custom" ? " *" : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {invitationDetails ? (
+                    <p className="mt-1 text-xs text-blue-600">
+                      This role was prefilled from your invitation.
+                    </p>
+                  ) : null}
+                  {errors.role && <p className="mt-1 text-xs text-red-500">{errors.role}</p>}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <h3 className="text-lg font-medium text-[#1E40AF] mb-1">Practice Information</h3>
+
+              <div className="grid grid-cols-3 gap-3 mb-3">
+                <div>
+                  <Label htmlFor="npiNumber" className="block text-sm font-medium text-gray-700 mb-1">
+                    NPI Number{shouldValidateNpi && <span className="text-red-500">*</span>}
+                  </Label>
+                  <Input
+                    id="npiNumber"
+                    type="text"
+                    name="npiNumber"
+                    value={formData.npiNumber}
+                    onChange={handleNumericChange}
+                    onBlur={handleNPIBlur}
+                    placeholder={isStaffRole ? "NPI Number" : "NPI Number"}
+                    maxLength={10}
+                    inputMode="numeric"
+                    disabled={isVerifyingNpi || isStaffRole}
+                    className={`w-full ${isStaffRole ? "bg-gray-50 text-gray-500 cursor-not-allowed" : ""} ${errors.npiNumber ? "border-red-500" : isNpiVerified ? "border-green-500" : ""}`}
+                  />
+                  {isVerifyingNpi && <p className="mt-1 text-xs text-blue-500">Verifying NPI...</p>}
+                  {!isVerifyingNpi && errors.npiNumber && <p className="mt-1 text-xs text-red-500">{errors.npiNumber}</p>}
+                  {!isVerifyingNpi && !errors.npiNumber && isNpiVerified && formData.npiNumber && (
+                    <p className="mt-1 text-xs text-green-600">NPI verified successfully</p>
+                  )}
+                </div>
+
+                <div>
+                  <Label htmlFor="specialty" className="block text-sm font-medium text-gray-700 mb-1">
+                    Specialty{shouldRequireSpecialty && <span className="text-red-500">*</span>}
+                  </Label>
+                  <Input
+                    id="specialty"
+                    type="text"
+                    name="specialty"
+                    value={formData.specialty}
+                    onChange={handleNameChange}
+                    placeholder="Specialty"
+                    disabled={areProfessionalDetailsDisabled}
+                    className={`w-full ${areProfessionalDetailsDisabled ? "bg-gray-50 text-gray-500 cursor-not-allowed" : ""} ${errors.specialty ? "border-red-500" : ""}`}
+                  />
+                  {errors.specialty && <p className="mt-1 text-xs text-red-500">{errors.specialty}</p>}
+                </div>
+
+                <div>
+                  <Label htmlFor="subSpecialty" className="block text-sm font-medium text-gray-700 mb-1">
+                    Sub-specialty
+                  </Label>
+                  <Input
+                    id="subSpecialty"
+                    type="text"
+                    name="subSpecialty"
+                    value={formData.subSpecialty}
+                    onChange={handleNameChange}
+                    placeholder="Sub-specialty"
+                    disabled={areProfessionalDetailsDisabled}
+                    className={`w-full ${areProfessionalDetailsDisabled ? "bg-gray-50 text-gray-500 cursor-not-allowed" : ""}`}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3 mb-3">
+                <div className="relative states-dropdown-container">
+                  <Label htmlFor="statesOfLicense" className="block text-sm font-medium text-gray-700 mb-1">
+                    State(s) of License<span className="text-red-500">*</span>
+                  </Label>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setIsStatesDropdownOpen(!isStatesDropdownOpen)}
+                      className={`w-full flex items-center justify-between px-3 py-2 text-sm border rounded-md bg-white ${errors.statesOfLicense ? "border-red-500" : "border-gray-300"} hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                    >
+                      <span className={formData.statesOfLicense.length > 0 ? "text-gray-900" : "text-gray-400"}>
+                        {formData.statesOfLicense.length > 0
+                          ? `${formData.statesOfLicense.length} state${formData.statesOfLicense.length > 1 ? 's' : ''} selected`
+                          : "Select states"}
+                      </span>
+                      <svg className="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+
+                    {isStatesDropdownOpen && (
+                      <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                        {US_STATES.map(state => (
+                          <label
+                            key={state}
+                            className="flex items-center px-3 py-2 hover:bg-gray-100 cursor-pointer"
                           >
-                            {clinic.clinicName}
-                          </button>
+                            <Checkbox
+                              checked={formData.statesOfLicense.includes(state)}
+                              onCheckedChange={() => handleStateToggle(state)}
+                              className="w-4 h-4 border-2 border-gray-300 rounded bg-white data-[state=checked]:bg-[#1E40AF] data-[state=checked]:border-[#1E40AF] data-[state=checked]:text-white"
+                            />
+                            <span className="ml-2 text-sm text-gray-700">{state}</span>
+                          </label>
                         ))}
-                        {formData.clinicName.trim() ? (
-                          <button
-                            type="button"
-                            onMouseDown={() => handleClinicSelect(formData.clinicName.trim(), false)}
-                            className="block w-full px-3 py-2 text-left text-sm font-medium text-blue-600 hover:bg-blue-50"
-                          >
-                            Use "{formData.clinicName.trim()}" as a new clinic
-                          </button>
-                        ) : null}
-                      </>
+                      </div>
                     )}
                   </div>
-                )}
-                {!isSearchingClinics &&
-                normalizeClinicName(existingClinicMatch) === normalizeClinicName(formData.clinicName) &&
-                formData.clinicName.trim().length > 2 &&
-                !invitationDetails && (
-                  <div className="mt-2 rounded-md bg-blue-50 border border-blue-100 p-2 text-xs font-semibold text-blue-700 shadow-sm">
-                    This clinic already exists in the system.
+                  {formData.statesOfLicense.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {formData.statesOfLicense.map(state => (
+                        <span
+                          key={state}
+                          className="inline-flex items-center px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded"
+                        >
+                          {state}
+                          <button
+                            type="button"
+                            onClick={() => handleStateToggle(state)}
+                            className="ml-1 hover:text-blue-900"
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {errors.statesOfLicense && <p className="mt-1 text-xs text-red-500">{errors.statesOfLicense}</p>}
+                </div>
+
+                <div>
+                  <Label htmlFor="licenseNumber" className="block text-sm font-medium text-gray-700 mb-1">
+                    License Number
+                  </Label>
+                  <Input
+                    id="licenseNumber"
+                    type="text"
+                    name="licenseNumber"
+                    value={formData.licenseNumber}
+                    onChange={handleNumericChange}
+                    placeholder="License Number"
+                    disabled={areProfessionalDetailsDisabled}
+                    className={`w-full ${areProfessionalDetailsDisabled ? "bg-gray-50 text-gray-500 cursor-not-allowed" : ""}`}
+                  />
+                </div>
+
+                <div className="relative">
+                  <Label htmlFor="transcriptPurging" className="block text-sm font-medium text-gray-700 mb-1">
+                    Transcript Purging<span className="text-red-500">*</span>
+                  </Label>
+                  <Select
+                    value={formData.transcriptPurging}
+                    onValueChange={(value) => {
+                      setFormData(prev => ({ ...prev, transcriptPurging: value }));
+                      setErrors(prev => ({ ...prev, transcriptPurging: "" }));
+                    }}
+                  >
+                    <SelectTrigger className={`w-full bg-white ${errors.transcriptPurging ? "border-red-500" : ""}`}>
+                      <SelectValue placeholder="Select timeframe" />
+                    </SelectTrigger>
+                    <SelectContent className="z-50 bg-white border border-gray-200 shadow-lg">
+                      <SelectItem value="1" className="cursor-pointer hover:bg-gray-100">1 day</SelectItem>
+                      <SelectItem value="7" className="cursor-pointer hover:bg-gray-100">7 days</SelectItem>
+                      <SelectItem value="30" className="cursor-pointer hover:bg-gray-100">30 days</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {errors.transcriptPurging && <p className="mt-1 text-xs text-red-500">{errors.transcriptPurging}</p>}
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-3 mb-3">
+                <div ref={clinicDropdownRef} className="relative">
+                  <Label htmlFor="clinicName" className="block text-sm font-medium text-gray-700 mb-1">
+                    Clinic/Practice Name<span className="text-red-500">*</span>
+                  </Label>
+                  <div className="relative">
+                    <Input
+                      id="clinicName"
+                      type="text"
+                      name="clinicName"
+                      value={formData.clinicName}
+                      onChange={handleChange}
+                      onBlur={handleClinicNameBlur}
+                      onFocus={() => setIsClinicDropdownOpen(true)}
+                      placeholder="Search clinics or add a new one"
+                      disabled={Boolean(invitationDetails)}
+                      className={`w-full pr-9 ${errors.clinicName ? "border-red-500" : ""}`}
+                    />
+                    <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                   </div>
-                )}
-                {invitationDetails ? (
-                  <p className="mt-1 text-xs text-blue-600">
-                    This clinic was prefilled from your invitation.
-                  </p>
-                ) : null}
-                {errors.clinicName && <p className="mt-1 text-xs text-red-500">{errors.clinicName}</p>}
-              </div>
-              
-              <div className="col-span-2">
-                <Label htmlFor="practiceAddressStreet" className="block text-sm font-medium text-gray-700 mb-1">
-                  {signupType === "clinic" ? (
-                    <>Address<span className="text-red-500">*</span></>
-                  ) : (
-                    "Address"
+                  {isClinicDropdownOpen && !invitationDetails && (
+                    <div className="absolute z-40 mt-2 w-full rounded-md border border-gray-200 bg-white shadow-lg">
+                      {isSearchingClinics ? (
+                        <div className="px-3 py-2 text-sm text-gray-500">Searching clinics...</div>
+                      ) : (
+                        <>
+                          {clinicOptions.map((clinic) => (
+                            <button
+                              key={clinic.id || clinic.clinicName}
+                              type="button"
+                              onMouseDown={() => handleClinicSelect(clinic.clinicName, true)}
+                              className="block w-full border-b border-gray-100 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                            >
+                              {clinic.clinicName}
+                            </button>
+                          ))}
+                          {formData.clinicName.trim() ? (
+                            <button
+                              type="button"
+                              onMouseDown={() => handleClinicSelect(formData.clinicName.trim(), false)}
+                              className="block w-full px-3 py-2 text-left text-sm font-medium text-blue-600 hover:bg-blue-50"
+                            >
+                              Use "{formData.clinicName.trim()}" as a new clinic
+                            </button>
+                          ) : null}
+                        </>
+                      )}
+                    </div>
                   )}
-                </Label>
-                <Input
-                  id="practiceAddressStreet"
-                  type="text"
-                  name="street"
-                  value={formData.practiceAddress.street}
-                  onChange={(e) => handlePracticeAddressChange("street", e.target.value)}
-                  placeholder="Street Address"
-                  className={`w-full ${errors.practiceAddress?.street ? "border-red-500" : ""}`}
+                  {!isSearchingClinics &&
+                    normalizeClinicName(existingClinicMatch) === normalizeClinicName(formData.clinicName) &&
+                    formData.clinicName.trim().length > 2 &&
+                    !invitationDetails && (
+                      <div className="mt-2 rounded-md bg-blue-50 border border-blue-100 p-2 text-xs font-semibold text-blue-700 shadow-sm">
+                        This clinic already exists in the system.
+                      </div>
+                    )}
+                  {invitationDetails ? (
+                    <p className="mt-1 text-xs text-blue-600">
+                      This clinic was prefilled from your invitation.
+                    </p>
+                  ) : null}
+                  {errors.clinicName && <p className="mt-1 text-xs text-red-500">{errors.clinicName}</p>}
+                </div>
+
+                <div className="col-span-2">
+                  <Label htmlFor="practiceAddressStreet" className="block text-sm font-medium text-gray-700 mb-1">
+                    {signupType === "clinic" ? (
+                      <>Address<span className="text-red-500">*</span></>
+                    ) : (
+                      "Address"
+                    )}
+                  </Label>
+                  <Input
+                    id="practiceAddressStreet"
+                    type="text"
+                    name="street"
+                    value={formData.practiceAddress.street}
+                    onChange={(e) => handlePracticeAddressChange("street", e.target.value)}
+                    placeholder="Street Address"
+                    className={`w-full ${errors.practiceAddress?.street ? "border-red-500" : ""}`}
+                  />
+                  {errors.practiceAddress?.street && <p className="mt-1 text-xs text-red-500">{errors.practiceAddress.street}</p>}
+                </div>
+              </div>
+
+              {/* Row 2: Practice Address - Street, City, State */}
+              <div className="grid grid-cols-3 gap-3 mb-3">
+                {/* Street Address */}
+
+
+                {/* City */}
+                <div>
+                  <Label htmlFor="practiceAddressCity" className="block text-sm font-medium text-gray-700 mb-1">
+                    {signupType === "clinic" ? (
+                      <>City<span className="text-red-500">*</span></>
+                    ) : (
+                      "City"
+                    )}
+                  </Label>
+                  <Input
+                    id="practiceAddressCity"
+                    type="text"
+                    name="city"
+                    value={formData.practiceAddress.city}
+                    onChange={(e) => handlePracticeAddressChange("city", e.target.value)}
+                    placeholder="City"
+                    className={`w-full ${errors.practiceAddress?.city ? "border-red-500" : ""}`}
+                  />
+                  {errors.practiceAddress?.city && <p className="mt-1 text-xs text-red-500">{errors.practiceAddress.city}</p>}
+                </div>
+
+                {/* State */}
+                <div className="relative">
+                  <Label htmlFor="practiceAddressState" className="block text-sm font-medium text-gray-700 mb-1">
+                    State<span className="text-red-500">*</span>
+                  </Label>
+                  <Select
+                    value={formData.practiceAddress.state}
+                    onValueChange={(value) => handlePracticeAddressChange("state", value)}
+                  >
+                    <SelectTrigger className={`w-full ${errors.practiceAddress?.state ? "border-red-500" : ""}`}>
+                      <SelectValue placeholder="State" />
+                    </SelectTrigger>
+                    <SelectContent className="z-50 max-h-60 bg-white border border-gray-200 shadow-lg">
+                      {US_STATES.map(state => (
+                        <SelectItem key={state} value={state} className="cursor-pointer hover:bg-gray-100">
+                          {state}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {errors.practiceAddress?.state && <p className="mt-1 text-xs text-red-500">{errors.practiceAddress.state}</p>}
+                </div>
+                <div>
+                  <Label htmlFor="practiceAddressZip" className="block text-sm font-medium text-gray-700 mb-1">
+                    {signupType === "clinic" ? (
+                      <>Zip Code<span className="text-red-500">*</span></>
+                    ) : (
+                      "Zip Code"
+                    )}
+                  </Label>
+                  <Input
+                    id="practiceAddressZip"
+                    type="text"
+                    name="zip"
+                    value={formData.practiceAddress.zip}
+                    onChange={(e) => {
+                      const zipValue = e.target.value.replace(/\D/g, '').slice(0, 5);
+                      handlePracticeAddressChange("zip", zipValue);
+                    }}
+                    onBlur={handleZipCodeBlur}
+                    placeholder="Zip Code"
+                    maxLength={5}
+                    inputMode="numeric"
+                    className={`w-full ${errors.practiceAddress?.zip ? "border-red-500" : ""}`}
+                  />
+                  {errors.practiceAddress?.zip && <p className="mt-1 text-xs text-red-500">{errors.practiceAddress.zip}</p>}
+                </div>
+              </div>
+
+
+            </div>
+
+            {/* BAA + Terms + Privacy + AI/Clinical responsibility acknowledgements */}
+            <div className="pt-2">
+              <div className={`rounded-xl border bg-white p-4 shadow-sm ${errors.baaSignature ? "border-red-200" : "border-slate-200"}`}>
+                <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-start gap-3">
+                    <div className="rounded-md bg-blue-50 p-2 text-blue-600">
+                      <ShieldCheck className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-semibold text-gray-900">
+                        Terms & Agreements<span className="text-red-500">*</span>
+                      </h3>
+                      <p className="mt-1 text-xs leading-5 text-gray-600">
+                        Complete the BAA signature and confirm the remaining acknowledgements before registering.
+                      </p>
+                    </div>
+                  </div>
+                  {baaSignature?.signed && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200">
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      BAA signed {baaSignature.baaVersion}
+                    </span>
+                  )}
+                </div>
+                <BaaAgreementModal
+                  mode="inline"
+                  user={baaUserDraft}
+                  onSubmit={handleBaaAccepted}
+                  submitLabel={baaSignature?.signed ? "Update BAA Signature" : "Accept BAA"}
                 />
-                {errors.practiceAddress?.street && <p className="mt-1 text-xs text-red-500">{errors.practiceAddress.street}</p>}
+                {errors.baaSignature && <p className="mt-2 text-xs text-red-500">{errors.baaSignature}</p>}
+
+                <div className={`mt-4 flex items-start gap-3 rounded-lg border p-3 ${errors.terms ? "border-red-200 bg-red-50" : "border-slate-200 bg-slate-50"}`}>
+                  <Checkbox
+                    id="terms"
+                    checked={agreeToTerms}
+                    onCheckedChange={(checked) => {
+                      setAgreeToTerms(checked);
+                      if (checked) {
+                        setErrors(prev => ({ ...prev, terms: "" }));
+                      }
+                    }}
+                    className="mt-0.5 w-4 h-4 border-2 border-gray-300 rounded bg-white data-[state=checked]:bg-[#1E40AF] data-[state=checked]:border-[#1E40AF] data-[state=checked]:text-white focus:outline-none focus:ring-2 focus:ring-[#3B82F6] focus:ring-offset-2 cursor-pointer"
+                  />
+                  <div>
+                    <Label htmlFor="terms" className="text-sm leading-5 text-gray-700 cursor-pointer">
+                      I agree to{" "}
+                      <button
+                        type="button"
+                        onClick={() => setIsTermsDialogOpen(true)}
+                        className="font-medium text-[#1E40AF] hover:underline"
+                      >
+                        Terms v1.0
+                      </button>
+                      {", "}
+                      <button type="button" onClick={() => setIsTermsDialogOpen(true)} className="font-medium text-[#1E40AF] hover:underline">Privacy</button>
+                      {", and "}
+                      <button type="button" onClick={() => setIsTermsDialogOpen(true)} className="font-medium text-[#1E40AF] hover:underline">AI/Clinical responsibility acknowledgements</button><span className="text-red-500">*</span>
+                    </Label>
+                    {errors.terms && <p className="mt-1 text-xs text-red-500">{errors.terms}</p>}
+                  </div>
+                </div>
               </div>
             </div>
 
-            {/* Row 2: Practice Address - Street, City, State */}
-            <div className="grid grid-cols-3 gap-3 mb-3">
-              {/* Street Address */}
-         
-
-              {/* City */}
-              <div>
-                <Label htmlFor="practiceAddressCity" className="block text-sm font-medium text-gray-700 mb-1">
-                  {signupType === "clinic" ? (
-                    <>City<span className="text-red-500">*</span></>
-                  ) : (
-                    "City"
-                  )}
-                </Label>
-                <Input
-                  id="practiceAddressCity"
-                  type="text"
-                  name="city"
-                  value={formData.practiceAddress.city}
-                  onChange={(e) => handlePracticeAddressChange("city", e.target.value)}
-                  placeholder="City"
-                  className={`w-full ${errors.practiceAddress?.city ? "border-red-500" : ""}`}
-                />
-                {errors.practiceAddress?.city && <p className="mt-1 text-xs text-red-500">{errors.practiceAddress.city}</p>}
-              </div>
-
-              {/* State */}
-              <div className="relative">
-                <Label htmlFor="practiceAddressState" className="block text-sm font-medium text-gray-700 mb-1">
-                  State<span className="text-red-500">*</span>
-                </Label>
-                <Select 
-                  value={formData.practiceAddress.state} 
-                  onValueChange={(value) => handlePracticeAddressChange("state", value)}
-                >
-                  <SelectTrigger className={`w-full ${errors.practiceAddress?.state ? "border-red-500" : ""}`}>
-                    <SelectValue placeholder="State" />
-                  </SelectTrigger>
-                  <SelectContent className="z-50 max-h-60 bg-white border border-gray-200 shadow-lg">
-                    {US_STATES.map(state => (
-                      <SelectItem key={state} value={state} className="cursor-pointer hover:bg-gray-100">
-                        {state}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {errors.practiceAddress?.state && <p className="mt-1 text-xs text-red-500">{errors.practiceAddress.state}</p>}
-              </div>
-              <div>
-                <Label htmlFor="practiceAddressZip" className="block text-sm font-medium text-gray-700 mb-1">
-                  {signupType === "clinic" ? (
-                    <>Zip Code<span className="text-red-500">*</span></>
-                  ) : (
-                    "Zip Code"
-                  )}
-                </Label>
-                <Input
-                  id="practiceAddressZip"
-                  type="text"
-                  name="zip"
-                  value={formData.practiceAddress.zip}
-                  onChange={(e) => {
-                    const zipValue = e.target.value.replace(/\D/g, '').slice(0, 5);
-                    handlePracticeAddressChange("zip", zipValue);
-                  }}
-                  onBlur={handleZipCodeBlur}
-                  placeholder="Zip Code"
-                  maxLength={5}
-                  inputMode="numeric"
-                  className={`w-full ${errors.practiceAddress?.zip ? "border-red-500" : ""}`}
-                />
-                {errors.practiceAddress?.zip && <p className="mt-1 text-xs text-red-500">{errors.practiceAddress.zip}</p>}
-              </div>
+            <div className="flex justify-center mt-4">
+              <button
+                type="submit"
+                disabled={
+                  isLoading ||
+                  isVerifyingNpi ||
+                  (shouldValidateNpi && !isNpiVerified) ||
+                  !baaSignature?.signed
+                }
+                className="w-[30%] flex items-center justify-center gap-2 bg-gradient-to-r from-[#1E40AF] to-[#3B82F6] hover:from-[#1E3A8A] hover:to-[#2563EB] text-white font-semibold py-3 rounded-lg transition-all duration-200 transform hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+              >
+                {isLoading ? "Registering..." : "Register"}
+              </button>
             </div>
-
- 
-          </div>
-
-          {/* Terms + Privacy + AI/Clinical responsibility acknowledgements* */}
-          <div className="pt-1">
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="terms"
-                checked={agreeToTerms}
-                onCheckedChange={(checked) => {
-                  setAgreeToTerms(checked);
-                  if (checked) {
-                    setErrors(prev => ({ ...prev, terms: "" }));
-                  }
-                }}
-                className="w-4 h-4 border-2 border-gray-300 rounded bg-white data-[state=checked]:bg-[#1E40AF] data-[state=checked]:border-[#1E40AF] data-[state=checked]:text-white focus:outline-none focus:ring-2 focus:ring-[#3B82F6] focus:ring-offset-2 cursor-pointer"
-              />
-              <Label htmlFor="terms" className="text-sm text-gray-600 cursor-pointer">
-                I agree to{" "}
-                <button 
-                  type="button" 
-                  onClick={() => setIsTermsDialogOpen(true)}
-                  className="text-[#1E40AF] hover:underline font-medium"
-                >
-                  Terms
-                </button>
-                {" + "}
-                <button type="button"  onClick={() => setIsTermsDialogOpen(true)} className="text-[#1E40AF] hover:underline font-medium">Privacy</button>
-                {" + "}
-                <button type="button"  onClick={() => setIsTermsDialogOpen(true)} className="text-[#1E40AF] hover:underline font-medium">AI/Clinical responsibility acknowledgements</button><span className="text-red-500">*</span>
-              </Label>
-            </div>
-            {errors.terms && <p className="mt-1 text-xs text-red-500">{errors.terms}</p>}
-          </div>
-
-          <div className="flex justify-center mt-4">
-            <button
-              type="submit"
-              disabled={
-                isLoading ||
-                isVerifyingNpi ||
-                (shouldValidateNpi && !isNpiVerified)
-              }
-              className="w-[30%] flex items-center justify-center gap-2 bg-gradient-to-r from-[#1E40AF] to-[#3B82F6] hover:from-[#1E3A8A] hover:to-[#2563EB] text-white font-semibold py-3 rounded-lg transition-all duration-200 transform hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-            >
-              {isLoading ? "Registering..." : "Register"}
-            </button>
-          </div>
-        </form>
-      </div>
+          </form>
+        </div>
       )}
 
       {/* --- Heartbeat Animation (Same as Login Page) --- */}

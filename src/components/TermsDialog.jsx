@@ -6,6 +6,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "./ui/dialog";
+import { CURRENT_BAA_VERSION } from "../constants/baaAgreement";
 
 const TermsDialog = ({ open, onOpenChange }) => {
   return (
@@ -15,9 +16,14 @@ const TermsDialog = ({ open, onOpenChange }) => {
           <DialogTitle className="text-2xl font-bold text-[#1E3A8A]">
             Seismic, by LeapGen.
           </DialogTitle>
-          <DialogDescription className="text-base font-semibold text-gray-700">
-            Network Business Associate Agreement
-          </DialogDescription>
+          <div className="flex flex-wrap items-center gap-2">
+            <DialogDescription className="text-base font-semibold text-gray-700">
+              Network Business Associate Agreement
+            </DialogDescription>
+            <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600">
+              {CURRENT_BAA_VERSION}
+            </span>
+          </div>
           <DialogDescription className="text-sm text-gray-600 italic">
             (HIPAA-Compliant | AI-Enabled Healthcare Support Platform)
           </DialogDescription>
