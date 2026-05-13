@@ -18,7 +18,7 @@ const TermsDialog = ({ open, onOpenChange }) => {
           </DialogTitle>
           <div className="flex flex-wrap items-center gap-2">
             <DialogDescription className="text-base font-semibold text-gray-700">
-              Network Business Associate Agreement
+              Clinical Data & Privacy Agreement
             </DialogDescription>
             <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600">
               {CURRENT_BAA_VERSION}
