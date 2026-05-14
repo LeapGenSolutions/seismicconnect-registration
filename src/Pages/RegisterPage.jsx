@@ -50,7 +50,7 @@ const initialFormData = {
     state: "",
     zip: "",
   },
-  transcriptPurging: "30",
+  transcriptPurging: "",
 };
 
 // Initial errors structure
@@ -112,7 +112,6 @@ const RegisterPage = () => {
   const [acknowledgeClinicalResponsibility, setAcknowledgeClinicalResponsibility] = useState(false);
   const [acknowledgeRetentionPolicy, setAcknowledgeRetentionPolicy] = useState(false);
   const [baaSignature, setBaaSignature] = useState(null);
-  const [baaSignerName, setBaaSignerName] = useState("");
   const [baaSignerRole, setBaaSignerRole] = useState("");
   const [isBaaAuthorized, setIsBaaAuthorized] = useState(false);
   const [isBaaAgreementOpen, setIsBaaAgreementOpen] = useState(false);
@@ -179,13 +178,19 @@ const RegisterPage = () => {
     || (!shouldRequireSpecialty ? formData.role.trim() : undefined);
   const baaUserDraft = useMemo(
     () => ({
-      fullName: [formData.firstName, formData.lastName].filter(Boolean).join(" "),
-      name: [formData.firstName, formData.lastName].filter(Boolean).join(" "),
+      fullName: [formData.firstName, formData.middleName, formData.lastName]
+        .map((namePart) => namePart.trim())
+        .filter(Boolean)
+        .join(" "),
+      name: [formData.firstName, formData.middleName, formData.lastName]
+        .map((namePart) => namePart.trim())
+        .filter(Boolean)
+        .join(" "),
       email: formData.primaryEmail,
       role: formData.role,
       clinicName: formData.clinicName,
     }),
-    [formData.clinicName, formData.firstName, formData.lastName, formData.primaryEmail, formData.role]
+    [formData.clinicName, formData.firstName, formData.lastName, formData.middleName, formData.primaryEmail, formData.role]
   );
   const allAgreementAcknowledgementsChecked =
     agreeToTerms &&
@@ -238,11 +243,11 @@ const RegisterPage = () => {
   };
 
   const handleBaaAccepted = () => {
-    const signerName = baaSignerName.trim().replace(/\s+/g, " ");
+    const signerName = baaUserDraft.fullName.trim().replace(/\s+/g, " ");
     const signedTimeZone = getBrowserTimeZone();
 
     if (!signerName || signerName.length < 2) {
-      setErrors((prev) => ({ ...prev, baaSignature: "Enter your full legal name to accept the agreement." }));
+      setErrors((prev) => ({ ...prev, baaSignature: "Complete your legal name in Step 1 before accepting the agreement." }));
       return;
     }
 
@@ -287,6 +292,10 @@ const RegisterPage = () => {
     });
     setErrors((prev) => ({ ...prev, baaSignature: "", terms: "" }));
     setIsBaaAgreementOpen(false);
+    toast({
+      title: "Agreement accepted",
+      description: "Your Clinical Data & Privacy Agreement is complete.",
+    });
   };
 
   useEffect(() => {
@@ -301,7 +310,7 @@ const RegisterPage = () => {
       setBaaSignature(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [baaSignerName, baaSignerRole, isBaaAuthorized]);
+  }, [baaSignerRole, isBaaAuthorized]);
 
   useEffect(() => {
     if (baaSignature?.signed) {
@@ -682,7 +691,6 @@ const RegisterPage = () => {
     setAcknowledgeClinicalResponsibility(false);
     setAcknowledgeRetentionPolicy(false);
     setBaaSignature(null);
-    setBaaSignerName("");
     setBaaSignerRole("");
     setIsBaaAuthorized(false);
     setHasReviewedAgreement(false);
@@ -1917,62 +1925,28 @@ const RegisterPage = () => {
                     <button
                       type="button"
                       onClick={handleAgreementOpen}
-                      className="inline-flex items-center justify-center rounded-md border border-[#BFDBFE] bg-[#EFF6FF] px-3 py-2 text-sm font-semibold text-[#1E40AF] hover:bg-[#DBEAFE]"
-                    >
-                      View Agreement
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <div>
-                      <Label htmlFor="baaSignerName" className="block text-sm font-medium text-gray-700 mb-1">
-                        Full Legal Name<span className="text-red-500">*</span>
-                      </Label>
-                      <Input
-                        id="baaSignerName"
-                        value={baaSignerName}
-                        onChange={(event) => {
-                          setBaaSignerName(event.target.value);
-                          setErrors(prev => ({ ...prev, baaSignature: "" }));
-                        }}
-                        placeholder={baaUserDraft.fullName || "Full legal name"}
-                        autoComplete="name"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="baaSignerRole" className="block text-sm font-medium text-gray-700 mb-1">
-                        Optional Title/Role
-                      </Label>
-                      <Input
-                        id="baaSignerRole"
-                        value={baaSignerRole}
-                        onChange={(event) => setBaaSignerRole(event.target.value)}
-                        placeholder="e.g., Practice Administrator"
-                      />
-                    </div>
-                  </div>
-                  <div className="mt-4 flex flex-col gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:flex-row sm:items-center sm:justify-between">
-                    <p className="text-xs leading-5 text-slate-600">
-                      The agreement opens in a focused review window. Acknowledgements and final acceptance appear after you scroll through the PDF.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={handleAgreementOpen}
-                      className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-[#1E40AF] px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#1E3A8A]"
+                      className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#1E40AF] px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#1E3A8A]"
                     >
                       <FileText className="h-4 w-4" />
                       Review and Accept
                     </button>
                   </div>
+                  <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-xs leading-5 text-slate-600">
+                      The agreement opens in a focused review window. Your legal name, title or role, acknowledgements, and final acceptance appear after you scroll through the PDF.
+                    </p>
+                  </div>
                   {baaSignature?.signed && (
-                    <span className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-[#EFF6FF] px-3 py-1 text-xs font-semibold text-[#1E3A8A] ring-1 ring-[#BFDBFE]">
-                      <CheckCircle2 className="h-3.5 w-3.5" />
-                      Agreement accepted {baaSignature.baaVersion}
+                    <span className="mt-3 inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 shadow-sm">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                      Agreement Accepted · Completed {baaSignature.baaVersion}
                     </span>
                   )}
                   {errors.baaSignature && <p className="mt-2 text-xs text-red-500">{errors.baaSignature}</p>}
-                {errors.terms && <p className="mt-2 text-xs text-red-500">{errors.terms}</p>}
+                  {errors.terms && <p className="mt-2 text-xs text-red-500">{errors.terms}</p>}
                 </div>
               </div>
+
             </div>
 
             <div className="flex flex-col items-center gap-3 pt-1">
@@ -1980,16 +1954,17 @@ const RegisterPage = () => {
                 HIPAA Compliant • Encrypted Infrastructure • Secure Clinical Data
               </div>
               <button
-                type="submit"
-                disabled={
-                  isLoading ||
-                  isVerifyingNpi ||
-                  (shouldValidateNpi && !isNpiVerified) ||
-                  !baaSignature?.signed ||
-                  !agreeToTerms ||
-                  !acknowledgeClinicalResponsibility ||
-                  !acknowledgeRetentionPolicy
-                }
+	                type="submit"
+	                disabled={
+	                  isLoading ||
+	                  isVerifyingNpi ||
+	                  (shouldValidateNpi && !isNpiVerified) ||
+	                  !formData.transcriptPurging ||
+	                  !baaSignature?.signed ||
+	                  !agreeToTerms ||
+	                  !acknowledgeClinicalResponsibility ||
+	                  !acknowledgeRetentionPolicy
+	                }
                 className="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-[#1E40AF] to-[#3B82F6] py-3 font-semibold text-white transition-all duration-200 hover:from-[#1E3A8A] hover:to-[#2563EB] disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:min-w-[320px]"
               >
                 {isLoading ? "Completing..." : "Complete Secure Registration"}
@@ -2075,7 +2050,7 @@ const RegisterPage = () => {
         `}</style>
       </div>
 
-      {/* Terms Dialog */}
+      {/* Agreement Dialog */}
       {isBaaAgreementOpen && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/70 p-0 sm:p-6">
           <div className="flex h-full w-full flex-col overflow-hidden bg-white shadow-2xl sm:h-[92vh] sm:max-w-5xl sm:rounded-2xl">
@@ -2154,6 +2129,36 @@ const RegisterPage = () => {
 
                 {hasReviewedAgreement && (
                   <>
+                    <div className="mb-4 grid grid-cols-1 gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:grid-cols-2">
+                      <div>
+                        <Label htmlFor="baaSignerName" className="block text-sm font-medium text-gray-700 mb-1">
+                          Legal Name<span className="text-red-500">*</span>
+                        </Label>
+                        <Input
+                          id="baaSignerName"
+                          value={baaUserDraft.fullName}
+                          readOnly
+                          placeholder={baaUserDraft.fullName || "Legal name"}
+                          autoComplete="name"
+                          className={`bg-gray-50 text-slate-700 ${errors.baaSignature && !baaUserDraft.fullName.trim() ? "border-red-500" : ""}`}
+                        />
+                        <p className="mt-1 text-xs leading-5 text-slate-500">
+                          This comes from Step 1. Update your name there if it needs to change.
+                        </p>
+                      </div>
+                      <div>
+                        <Label htmlFor="baaSignerRole" className="block text-sm font-medium text-gray-700 mb-1">
+                          Title / Role <span className="text-slate-500">(optional)</span>
+                        </Label>
+                        <Input
+                          id="baaSignerRole"
+                          value={baaSignerRole}
+                          onChange={(event) => setBaaSignerRole(event.target.value)}
+                          placeholder={baaUserDraft.role || "e.g., Practice Administrator"}
+                        />
+                      </div>
+                    </div>
+
                     <div className="mb-4 flex items-start gap-3 rounded-lg border border-[#DBEAFE] bg-[#EFF6FF] p-3">
                       <Checkbox
                         id="agreementMasterAcknowledgement"
