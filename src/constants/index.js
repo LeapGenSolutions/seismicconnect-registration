@@ -12,7 +12,7 @@ export const STREAM_API_KEY = "72499ykcfb3z"
 export const REDIRECT_URI = "https://dev.seismicconnect.com/"
 export const CHATBOT_URL = "https://chat-strlit-gva3h7ekahgdctgk.centralus-01.azurewebsites.net"
 export const CIAM_AUTH_URL = "https://leapgenaiexternal.ciamlogin.com/526922da-32fc-472e-a268-3875f1d50517/oauth2/v2.0/authorize"
-export const CIAM_CLIENT_ID = "e8f47d33-02b8-4467-b0d8-8f705b07a463"
+export const CIAM_CLIENT_ID = "a74f4636-3de3-46ed-8382-e605da6ffc6c"
 const DEFAULT_CIAM_REDIRECT_URI =
   "https://polite-mushroom-0a1a2b60f.1.azurestaticapps.net/standalone/registration";
 export const CIAM_REDIRECT_URI =
